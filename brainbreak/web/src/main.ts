@@ -1,11 +1,10 @@
-import JSZip from 'jszip';
-import { proceduralBeat } from './audio';
-import { registerBrainBreakPlugin, setCameraEvaluation, setCustomTargets, updatePoseBridge } from './bridge';
+import { musicEngine } from './audio';
+import { registerBrainBreakPlugin, setCameraEvaluation, setReduceMotion, updatePoseBridge } from './bridge';
 import { roomTransport } from './network';
 import './style.css';
 
 declare const __BRAINBREAK_WASM_PATH__: string;
-const CAMERA_GATE_SCHEMA = 2;
+const CAMERA_GATE_SCHEMA = 3;
 
 const video = document.querySelector<HTMLVideoElement>('#camera-video')!;
 const overlay = document.querySelector<HTMLCanvasElement>('#pose-overlay')!;
@@ -18,13 +17,29 @@ const primaryCameraButton = document.querySelector<HTMLButtonElement>('#primary-
 const guideOnlyButton = document.querySelector<HTMLButtonElement>('#guide-only-button')!;
 const guideWarning = document.querySelector<HTMLElement>('#guide-warning')!;
 const gateError = document.querySelector<HTMLElement>('#gate-error')!;
+const audioButton = document.querySelector<HTMLButtonElement>('#audio-button')!;
+const reduceMotionButton = document.querySelector<HTMLButtonElement>('#reduce-motion-button')!;
+const trackStatus = document.querySelector<HTMLElement>('#track-status')!;
 motionGate.dataset.schema = String(CAMERA_GATE_SCHEMA);
 let cameraRunning = false;
+let musicStarted = false;
+let reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 roomTransport.onStatus = (status) => { roomStatus.textContent = status; };
 
-async function unlockAudio(): Promise<void> {
-  await proceduralBeat.start();
+async function unlockAudio(): Promise<boolean> {
+  if (musicStarted) return true;
+  try {
+    await musicEngine.start();
+    musicStarted = true;
+    audioButton.textContent = 'Music on';
+    trackStatus.textContent = 'Special Spotlight • 126 BPM';
+    return true;
+  } catch (error) {
+    trackStatus.textContent = 'Music unavailable • visual beat active';
+    console.warn('Music playback could not start', error);
+    return false;
+  }
 }
 
 function setGuideOnly(enabled: boolean): void {
@@ -50,7 +65,7 @@ async function enableCamera(): Promise<void> {
   primaryCameraButton.textContent = 'Starting camera…';
   gateError.textContent = '';
   try {
-    await unlockAudio();
+    void unlockAudio();
     const { startVision } = await import('./vision');
     await startVision(video, overlay, updatePoseBridge, (status) => { cameraStatus.textContent = status; });
     cameraRunning = true;
@@ -81,6 +96,7 @@ cameraButton.addEventListener('click', async () => {
 
 primaryCameraButton.addEventListener('click', () => void enableCamera());
 guideOnlyButton.addEventListener('click', () => {
+  void unlockAudio();
   motionGate.classList.add('hidden');
   setGuideOnly(true);
 });
@@ -111,29 +127,29 @@ document.querySelector('#join-room')!.addEventListener('click', async () => {
   }
 });
 
-document.querySelector('#audio-button')!.addEventListener('click', async (event) => {
-  await unlockAudio();
-  const muted = proceduralBeat.toggle();
-  (event.currentTarget as HTMLButtonElement).textContent = muted ? 'Sound off' : 'Sound on';
+audioButton.addEventListener('click', async () => {
+  if (!musicStarted) {
+    await unlockAudio();
+    return;
+  }
+  const muted = musicEngine.toggle();
+  audioButton.textContent = muted ? 'Music off' : 'Music on';
 });
 
-document.querySelector<HTMLInputElement>('#pack-input')!.addEventListener('change', async (event) => {
-  const file = (event.target as HTMLInputElement).files?.[0];
-  if (!file) return;
-  try {
-    const zip = await JSZip.loadAsync(file);
-    const beatmapFile = zip.file('beatmap.json');
-    if (!beatmapFile) throw new Error('Pack is missing beatmap.json');
-    const beatmap = JSON.parse(await beatmapFile.async('text')) as { targets?: number[] };
-    if (!Array.isArray(beatmap.targets) || beatmap.targets.length === 0) throw new Error('Pack has no targets');
-    setCustomTargets(beatmap.targets);
-    roomStatus.textContent = `Loaded ${file.name}`;
-  } catch (error) {
-    roomStatus.textContent = error instanceof Error ? error.message : 'Invalid content pack';
-  }
+function applyReducedMotion(): void {
+  document.body.classList.toggle('reduced-motion', reducedMotion);
+  setReduceMotion(reducedMotion);
+  reduceMotionButton.textContent = reducedMotion ? 'Reduced motion on' : 'Reduced motion off';
+  reduceMotionButton.setAttribute('aria-pressed', String(reducedMotion));
+}
+
+reduceMotionButton.addEventListener('click', () => {
+  reducedMotion = !reducedMotion;
+  applyReducedMotion();
 });
 
 registerBrainBreakPlugin();
 setCameraEvaluation(false);
+applyReducedMotion();
 window.load(__BRAINBREAK_WASM_PATH__);
 window.setTimeout(() => document.querySelector('#boot-screen')?.classList.add('hidden'), 900);

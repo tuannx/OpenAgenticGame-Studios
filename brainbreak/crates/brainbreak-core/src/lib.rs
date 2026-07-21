@@ -522,6 +522,380 @@ impl MotionRuntime {
     }
 }
 
+pub const RUNNER_OBSTACLE_CAPACITY: usize = 12;
+
+const RUNNER_BPM: f32 = 126.0;
+const RUNNER_BEAT_SECONDS: f32 = 60.0 / RUNNER_BPM;
+const RUNNER_COLLISION_DISTANCE: f32 = 0.085;
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RunnerPhase {
+    #[default]
+    Ready,
+    Running,
+    GameOver,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RunnerHazard {
+    LaneBlock,
+    Hurdle,
+    OverheadGate,
+    BeatOrb,
+}
+
+impl RunnerHazard {
+    pub const fn cue(self) -> &'static str {
+        match self {
+            Self::LaneBlock => "SWITCH LANE",
+            Self::Hurdle => "JUMP",
+            Self::OverheadGate => "SQUAT",
+            Self::BeatOrb => "CLAP",
+        }
+    }
+
+    pub const fn required_action(self) -> Option<Action> {
+        match self {
+            Self::LaneBlock => None,
+            Self::Hurdle => Some(Action::Jump),
+            Self::OverheadGate => Some(Action::Squat),
+            Self::BeatOrb => Some(Action::Clap),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct RunnerObstacle {
+    pub id: u32,
+    pub lane: i8,
+    pub kind: RunnerHazard,
+    /// `1.0` is the horizon and `0.0` is the player collision line.
+    pub distance: f32,
+    resolved_players: u8,
+}
+
+impl RunnerObstacle {
+    fn is_resolved_for(self, player: usize) -> bool {
+        self.resolved_players & (1 << player) != 0
+    }
+
+    fn resolve_for(&mut self, player: usize) {
+        self.resolved_players |= 1 << player;
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum RunnerFeedback {
+    #[default]
+    None,
+    Dodge,
+    Crash,
+    BeatPickup,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RunnerPlayer {
+    pub lane: i8,
+    pub score: u32,
+    pub best_score: u32,
+    pub combo: u16,
+    pub lives: u8,
+    pub evaluated: bool,
+    pub jump_time: f32,
+    pub slide_time: f32,
+    pub pulse_time: f32,
+    pub crash_time: f32,
+}
+
+impl Default for RunnerPlayer {
+    fn default() -> Self {
+        Self {
+            lane: 0,
+            score: 0,
+            best_score: 0,
+            combo: 0,
+            lives: 3,
+            evaluated: false,
+            jump_time: 0.0,
+            slide_time: 0.0,
+            pulse_time: 0.0,
+            crash_time: 0.0,
+        }
+    }
+}
+
+const RUNNER_PATTERN: [(RunnerHazard, i8); 16] = [
+    (RunnerHazard::Hurdle, 0),
+    (RunnerHazard::BeatOrb, 0),
+    (RunnerHazard::LaneBlock, -1),
+    (RunnerHazard::OverheadGate, 0),
+    (RunnerHazard::LaneBlock, 1),
+    (RunnerHazard::Hurdle, -1),
+    (RunnerHazard::BeatOrb, 1),
+    (RunnerHazard::OverheadGate, 1),
+    (RunnerHazard::LaneBlock, 0),
+    (RunnerHazard::Hurdle, 1),
+    (RunnerHazard::BeatOrb, -1),
+    (RunnerHazard::OverheadGate, -1),
+    (RunnerHazard::LaneBlock, -1),
+    (RunnerHazard::Hurdle, 0),
+    (RunnerHazard::LaneBlock, 1),
+    (RunnerHazard::BeatOrb, 0),
+];
+
+#[derive(Clone, Debug)]
+pub struct RunnerGame {
+    pub phase: RunnerPhase,
+    pub players: [RunnerPlayer; PLAYER_CAPACITY],
+    pub obstacles: [Option<RunnerObstacle>; RUNNER_OBSTACLE_CAPACITY],
+    pub feedback: [RunnerFeedback; PLAYER_CAPACITY],
+    pub beat_index: u32,
+    pub beat_progress: f32,
+    pub world_distance: f32,
+    pub speed: f32,
+    beat_accumulator: f32,
+    score_fraction: [f32; PLAYER_CAPACITY],
+    next_obstacle_id: u32,
+    pattern_cursor: usize,
+}
+
+impl Default for RunnerGame {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl RunnerGame {
+    pub fn new() -> Self {
+        Self {
+            phase: RunnerPhase::Ready,
+            players: [RunnerPlayer::default(); PLAYER_CAPACITY],
+            obstacles: [None; RUNNER_OBSTACLE_CAPACITY],
+            feedback: [RunnerFeedback::None; PLAYER_CAPACITY],
+            beat_index: 0,
+            beat_progress: 0.0,
+            world_distance: 0.0,
+            speed: 0.205,
+            beat_accumulator: 0.0,
+            score_fraction: [0.0; PLAYER_CAPACITY],
+            next_obstacle_id: 1,
+            pattern_cursor: 0,
+        }
+    }
+
+    pub fn update(
+        &mut self,
+        dt: f32,
+        active: [u32; PLAYER_CAPACITY],
+        triggered: [u32; PLAYER_CAPACITY],
+        evaluation_enabled: [bool; PLAYER_CAPACITY],
+    ) {
+        let dt = dt.clamp(0.0, 0.05);
+        self.feedback = [RunnerFeedback::None; PLAYER_CAPACITY];
+        for (player, enabled) in self.players.iter_mut().zip(evaluation_enabled) {
+            player.evaluated = enabled;
+            player.jump_time = (player.jump_time - dt).max(0.0);
+            player.slide_time = (player.slide_time - dt).max(0.0);
+            player.pulse_time = (player.pulse_time - dt).max(0.0);
+            player.crash_time = (player.crash_time - dt).max(0.0);
+        }
+
+        let has_evaluated_player = self.players.iter().any(|player| player.evaluated);
+        if self.phase == RunnerPhase::GameOver {
+            let restart_requested = triggered
+                .into_iter()
+                .zip(self.players.iter())
+                .any(|(mask, player)| player.evaluated && mask & Action::Clap.mask() != 0);
+            if restart_requested {
+                self.restart(evaluation_enabled);
+            }
+            return;
+        }
+        if self.phase == RunnerPhase::Ready {
+            if !has_evaluated_player {
+                return;
+            }
+            self.phase = RunnerPhase::Running;
+        }
+
+        self.apply_actions(active, triggered);
+        self.advance_beat(dt);
+        self.speed = (0.205 + self.world_distance / 12_000.0).min(0.31);
+        self.world_distance += (18.0 + self.speed * 22.0) * dt;
+
+        for (index, player) in self.players.iter_mut().enumerate() {
+            if !player.evaluated || player.lives == 0 {
+                continue;
+            }
+            self.score_fraction[index] += dt * (11.0 + self.speed * 18.0);
+            let whole_points = self.score_fraction[index].floor() as u32;
+            if whole_points > 0 {
+                player.score = player.score.saturating_add(whole_points);
+                self.score_fraction[index] -= whole_points as f32;
+            }
+        }
+
+        self.advance_obstacles(dt);
+        let all_evaluated_players_out = has_evaluated_player
+            && self
+                .players
+                .iter()
+                .filter(|player| player.evaluated)
+                .all(|player| player.lives == 0);
+        if all_evaluated_players_out {
+            self.phase = RunnerPhase::GameOver;
+            for player in &mut self.players {
+                player.best_score = player.best_score.max(player.score);
+            }
+        }
+    }
+
+    pub fn next_cue(&self) -> Option<RunnerObstacle> {
+        self.obstacles
+            .iter()
+            .flatten()
+            .filter(|obstacle| obstacle.distance >= 0.0)
+            .min_by(|a, b| a.distance.total_cmp(&b.distance))
+            .copied()
+    }
+
+    fn apply_actions(&mut self, active: [u32; PLAYER_CAPACITY], triggered: [u32; PLAYER_CAPACITY]) {
+        for index in 0..PLAYER_CAPACITY {
+            let player = &mut self.players[index];
+            if !player.evaluated || player.lives == 0 {
+                continue;
+            }
+            let mask = triggered[index];
+            let moved_left = mask & Action::MoveLeft.mask() != 0;
+            let moved_right = mask & Action::MoveRight.mask() != 0;
+            if moved_left != moved_right {
+                player.lane = if moved_left {
+                    (player.lane - 1).max(-1)
+                } else {
+                    (player.lane + 1).min(1)
+                };
+            }
+            if mask & Action::Jump.mask() != 0 || active[index] & Action::Jump.mask() != 0 {
+                player.jump_time = player.jump_time.max(0.72);
+            }
+            if mask & Action::Squat.mask() != 0 || active[index] & Action::Squat.mask() != 0 {
+                player.slide_time = player.slide_time.max(0.78);
+            }
+            if mask & Action::Clap.mask() != 0 {
+                player.pulse_time = 0.36;
+            }
+        }
+    }
+
+    fn advance_beat(&mut self, dt: f32) {
+        self.beat_accumulator += dt;
+        while self.beat_accumulator >= RUNNER_BEAT_SECONDS {
+            self.beat_accumulator -= RUNNER_BEAT_SECONDS;
+            self.beat_index = self.beat_index.wrapping_add(1);
+            let spawn_interval = if self.beat_index < 24 { 4 } else { 3 };
+            if self.beat_index % spawn_interval == 1 {
+                let (kind, lane) = RUNNER_PATTERN[self.pattern_cursor % RUNNER_PATTERN.len()];
+                self.spawn(kind, lane);
+                self.pattern_cursor = self.pattern_cursor.wrapping_add(1);
+            }
+        }
+        self.beat_progress = self.beat_accumulator / RUNNER_BEAT_SECONDS;
+    }
+
+    fn spawn(&mut self, kind: RunnerHazard, lane: i8) {
+        let slot = self
+            .obstacles
+            .iter()
+            .position(Option::is_none)
+            .unwrap_or_else(|| {
+                self.obstacles
+                    .iter()
+                    .enumerate()
+                    .min_by(|(_, a), (_, b)| {
+                        let a_distance = a.map_or(f32::INFINITY, |item| item.distance);
+                        let b_distance = b.map_or(f32::INFINITY, |item| item.distance);
+                        a_distance.total_cmp(&b_distance)
+                    })
+                    .map_or(0, |(index, _)| index)
+            });
+        self.obstacles[slot] = Some(RunnerObstacle {
+            id: self.next_obstacle_id,
+            lane: lane.clamp(-1, 1),
+            kind,
+            distance: 1.0,
+            resolved_players: 0,
+        });
+        self.next_obstacle_id = self.next_obstacle_id.wrapping_add(1).max(1);
+    }
+
+    fn advance_obstacles(&mut self, dt: f32) {
+        for obstacle in self.obstacles.iter_mut().flatten() {
+            obstacle.distance -= self.speed * dt;
+            if obstacle.distance > RUNNER_COLLISION_DISTANCE {
+                continue;
+            }
+            for player_index in 0..PLAYER_CAPACITY {
+                if obstacle.is_resolved_for(player_index) {
+                    continue;
+                }
+                obstacle.resolve_for(player_index);
+                let player = &mut self.players[player_index];
+                if !player.evaluated || player.lives == 0 {
+                    continue;
+                }
+                let same_lane = player.lane == obstacle.lane;
+                let success = match obstacle.kind {
+                    RunnerHazard::LaneBlock => !same_lane,
+                    RunnerHazard::Hurdle => !same_lane || player.jump_time > 0.0,
+                    RunnerHazard::OverheadGate => !same_lane || player.slide_time > 0.0,
+                    RunnerHazard::BeatOrb => same_lane && player.pulse_time > 0.0,
+                };
+                if obstacle.kind == RunnerHazard::BeatOrb {
+                    if success {
+                        player.combo = player.combo.saturating_add(1);
+                        player.score = player
+                            .score
+                            .saturating_add(250 + u32::from(player.combo.min(20)) * 15);
+                        self.feedback[player_index] = RunnerFeedback::BeatPickup;
+                    }
+                } else if success {
+                    player.combo = player.combo.saturating_add(1);
+                    player.score = player
+                        .score
+                        .saturating_add(120 + u32::from(player.combo.min(20)) * 10);
+                    self.feedback[player_index] = RunnerFeedback::Dodge;
+                } else {
+                    player.lives = player.lives.saturating_sub(1);
+                    player.combo = 0;
+                    player.crash_time = 0.48;
+                    self.feedback[player_index] = RunnerFeedback::Crash;
+                }
+            }
+        }
+        for slot in &mut self.obstacles {
+            if slot.is_some_and(|obstacle| obstacle.distance < -0.14) {
+                *slot = None;
+            }
+        }
+    }
+
+    fn restart(&mut self, evaluation_enabled: [bool; PLAYER_CAPACITY]) {
+        let best_scores = self
+            .players
+            .map(|player| player.best_score.max(player.score));
+        *self = Self::new();
+        for index in 0..PLAYER_CAPACITY {
+            self.players[index].best_score = best_scores[index];
+            self.players[index].evaluated = evaluation_enabled[index];
+        }
+        if evaluation_enabled.into_iter().any(|enabled| enabled) {
+            self.phase = RunnerPhase::Running;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -743,5 +1117,91 @@ mod tests {
             },
         );
         assert_ne!(runtime.players[0].triggered & Action::LeftUp.mask(), 0);
+    }
+
+    #[test]
+    fn runner_lane_changes_are_bounded() {
+        let mut game = RunnerGame::new();
+        for _ in 0..4 {
+            game.update(
+                0.01,
+                [0; PLAYER_CAPACITY],
+                [Action::MoveLeft.mask(), 0, 0, 0],
+                [true, false, false, false],
+            );
+        }
+        assert_eq!(game.players[0].lane, -1);
+        for _ in 0..6 {
+            game.update(
+                0.01,
+                [0; PLAYER_CAPACITY],
+                [Action::MoveRight.mask(), 0, 0, 0],
+                [true, false, false, false],
+            );
+        }
+        assert_eq!(game.players[0].lane, 1);
+    }
+
+    #[test]
+    fn guide_only_runner_neither_scores_nor_loses_lives() {
+        let mut game = RunnerGame::new();
+        game.spawn(RunnerHazard::LaneBlock, 0);
+        game.obstacles[0].as_mut().unwrap().distance = RUNNER_COLLISION_DISTANCE;
+        game.update(
+            0.02,
+            [0; PLAYER_CAPACITY],
+            [Action::Jump.mask(), 0, 0, 0],
+            [false; PLAYER_CAPACITY],
+        );
+        assert_eq!(game.phase, RunnerPhase::Ready);
+        assert_eq!(game.players[0].score, 0);
+        assert_eq!(game.players[0].lives, 3);
+    }
+
+    #[test]
+    fn jump_avoids_hurdle_and_awards_combo() {
+        let mut game = RunnerGame::new();
+        game.spawn(RunnerHazard::Hurdle, 0);
+        game.obstacles[0].as_mut().unwrap().distance = RUNNER_COLLISION_DISTANCE + 0.001;
+        game.update(
+            0.02,
+            [Action::Jump.mask(), 0, 0, 0],
+            [Action::Jump.mask(), 0, 0, 0],
+            [true, false, false, false],
+        );
+        assert_eq!(game.players[0].lives, 3);
+        assert_eq!(game.players[0].combo, 1);
+        assert_eq!(game.feedback[0], RunnerFeedback::Dodge);
+    }
+
+    #[test]
+    fn collision_costs_one_life_once() {
+        let mut game = RunnerGame::new();
+        game.spawn(RunnerHazard::LaneBlock, 0);
+        game.obstacles[0].as_mut().unwrap().distance = RUNNER_COLLISION_DISTANCE + 0.001;
+        let evaluation = [true, false, false, false];
+        game.update(0.02, [0; PLAYER_CAPACITY], [0; PLAYER_CAPACITY], evaluation);
+        assert_eq!(game.players[0].lives, 2);
+        game.update(0.02, [0; PLAYER_CAPACITY], [0; PLAYER_CAPACITY], evaluation);
+        assert_eq!(game.players[0].lives, 2);
+    }
+
+    #[test]
+    fn clap_restarts_after_game_over_and_preserves_best_score() {
+        let mut game = RunnerGame::new();
+        game.phase = RunnerPhase::GameOver;
+        game.players[0].evaluated = true;
+        game.players[0].score = 1_240;
+        game.players[0].lives = 0;
+        game.update(
+            0.01,
+            [0; PLAYER_CAPACITY],
+            [Action::Clap.mask(), 0, 0, 0],
+            [true, false, false, false],
+        );
+        assert_eq!(game.phase, RunnerPhase::Running);
+        assert_eq!(game.players[0].lives, 3);
+        assert_eq!(game.players[0].score, 0);
+        assert_eq!(game.players[0].best_score, 1_240);
     }
 }

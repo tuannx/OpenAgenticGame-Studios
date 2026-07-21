@@ -3,8 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-    <meta name="theme-color" content="#080c1c" />
-    <title>BrainBreak Motion Party</title>
+    <meta name="theme-color" content="#08041f" />
+    <meta name="description" content="A camera-controlled neon rhythm runner built with Macroquad and BrainBreak." />
+    <title>Neon Beat Runner • BrainBreak</title>
   </head>
   <body>
     <main id="game-shell">
@@ -15,39 +16,53 @@
         <b id="privacy-badge">LOCAL ONLY</b>
         <span id="camera-status">Camera off • local only</span>
       </aside>
-      <section id="control-panel" aria-label="Game controls">
-        <button id="camera-button" type="button">Enable motion</button>
-        <button id="create-room" type="button">Create room</button>
-        <div class="join-row">
-          <input id="room-code" maxlength="8" autocomplete="off" placeholder="ROOM CODE" aria-label="Room code" />
-          <button id="join-room" type="button">Join</button>
+      <details id="control-panel">
+        <summary>Party &amp; settings</summary>
+        <div class="control-grid" aria-label="Game controls">
+          <button id="camera-button" type="button">Enable motion</button>
+          <button id="audio-button" type="button">Start music</button>
+          <button id="reduce-motion-button" type="button" aria-pressed="false">Reduced motion off</button>
+          <button id="create-room" type="button">Create room</button>
+          <div class="join-row">
+            <input id="room-code" maxlength="8" autocomplete="off" placeholder="ROOM CODE" aria-label="Room code" />
+            <button id="join-room" type="button">Join</button>
+          </div>
+          <a href="/studio.html">Open Studio</a>
+          <strong id="room-status">Local party</strong>
         </div>
-        <label class="pack-button">
-          Import pack
-          <input id="pack-input" type="file" accept=".zip,.brainbreak.zip" />
-        </label>
-        <button id="audio-button" type="button">Sound on</button>
-        <a href="/studio.html">Open Studio</a>
-        <strong id="room-status">Local party</strong>
-      </section>
+      </details>
+      <aside id="music-credit" aria-label="Music attribution">
+        <strong id="track-status">Special Spotlight • 126 BPM</strong>
+        <span>
+          <a href="https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1600067&amp;Search=Search" target="_blank" rel="noreferrer">Kevin MacLeod</a>
+          • <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a>
+          • web-compressed
+        </span>
+      </aside>
       <div id="guide-warning" role="status" hidden>
-        GUIDANCE ONLY • NO SCORING OR MOTION EVALUATION
+        GUIDANCE ONLY • NO SCORE, COLLISION EVALUATION OR MULTIPLAYER ACTIONS
       </div>
       <section id="motion-gate" role="dialog" aria-modal="true" aria-labelledby="motion-gate-title">
         <div class="motion-gate-card">
-          <span class="gate-kicker">CAMERA REQUIRED</span>
-          <h1 id="motion-gate-title">Your body is the controller</h1>
-          <p>Motion Reactor scores only movement detected from your camera. Video and landmarks stay on this device.</p>
-          <button id="primary-camera-button" type="button">Enable camera &amp; play</button>
+          <span class="gate-kicker">BRAINBREAK PRESENTS</span>
+          <h1 id="motion-gate-title">Neon Beat Runner</h1>
+          <p>Lean to switch lanes. Jump over lasers. Squat under gates. Clap on the beat. Camera motion is required for an evaluated run; video stays on this device.</p>
+          <div class="move-legend" aria-label="Motion controls">
+            <span><b>LEAN</b> steer</span>
+            <span><b>JUMP</b> hurdles</span>
+            <span><b>SQUAT</b> gates</span>
+            <span><b>CLAP</b> beat orbs</span>
+          </div>
+          <button id="primary-camera-button" type="button">Enable camera, music &amp; run</button>
           <small id="gate-error" role="alert"></small>
           <button id="guide-only-button" type="button">Continue with guidance only</button>
-          <small class="guide-note">No camera means no score, combo, hit/miss evaluation, or multiplayer actions.</small>
+          <small class="guide-note">No camera means no score, collision evaluation, combo, or multiplayer action.</small>
         </div>
       </section>
       <section id="boot-screen">
         <div class="spinner"></div>
-        <h1>BrainBreak</h1>
-        <p>Loading the motion stage…</p>
+        <h1>Neon Beat Runner</h1>
+        <p>Charging the rhythm highway…</p>
       </section>
     </main>
     <script src="/mq_js_bundle.js"></script>

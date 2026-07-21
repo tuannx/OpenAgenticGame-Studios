@@ -1,11 +1,13 @@
 import type { PoseSnapshot } from './vision';
 import { roomTransport } from './network';
+import { musicEngine } from './audio';
 
 const KEYPOINTS = 17;
 const BUFFER_SIZE = 16 + 2 * (8 + KEYPOINTS * 12);
 let latestPoses: PoseSnapshot[] = [];
 let customTargets: number[] = [];
 let cameraEvaluationEnabled = false;
+let reduceMotion = false;
 const previousGamepadMasks = [0, 0];
 
 const ACTION = {
@@ -33,6 +35,10 @@ export function updatePoseBridge(poses: PoseSnapshot[]): void {
 export function setCameraEvaluation(enabled: boolean): void {
   cameraEvaluationEnabled = enabled;
   if (!enabled) latestPoses = [];
+}
+
+export function setReduceMotion(enabled: boolean): void {
+  reduceMotion = enabled;
 }
 
 export function setCustomTargets(targets: number[]): void {
@@ -85,7 +91,7 @@ function takeGamepadActions(player: number): number {
 export function registerBrainBreakPlugin(): void {
   window.miniquad_add_plugin({
     name: 'brainbreak_bridge',
-    version: 2,
+    version: 3,
     register_plugin(importObject: WebAssembly.Imports) {
       const env = importObject.env as Record<string, (...args: number[]) => number | void>;
       env.bb_copy_pose = copyPose;
@@ -95,6 +101,12 @@ export function registerBrainBreakPlugin(): void {
       env.bb_custom_target = (beatIndex: number) => customTargets.length === 0 ? 0 : customTargets[beatIndex % customTargets.length] ?? 0;
       env.bb_take_gamepad_actions = takeGamepadActions;
       env.bb_evaluation_enabled = (player: number) => cameraEvaluationEnabled && (latestPoses[player]?.quality ?? 0) >= 0.25 ? 1 : 0;
+      env.bb_audio_beat_phase = () => musicEngine.metrics().phase;
+      env.bb_audio_pulse = () => musicEngine.metrics().pulse;
+      env.bb_audio_energy = () => musicEngine.metrics().energy;
+      env.bb_audio_playing = () => musicEngine.metrics().playing ? 1 : 0;
+      env.bb_reduce_motion = () => reduceMotion ? 1 : 0;
+      env.bb_play_feedback = (kind: number) => musicEngine.playFeedback(kind);
     },
   });
 }

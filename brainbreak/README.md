@@ -1,8 +1,10 @@
-# BrainBreak Motion Party
+# BrainBreak Neon Beat Runner
 
-Macroquad/WebAssembly party games controlled by one or two people in a browser
-camera. The browser performs pose inference locally; only recognized action
-events are sent through WebRTC.
+An original neon endless runner built on the BrainBreak Macroquad/WebAssembly
+motion framework. One or two people in a browser camera steer between three
+lanes, jump hurdles, squat under gates, and clap to collect beat orbs. The
+browser performs pose inference locally; only recognized action events are sent
+through WebRTC.
 
 Live build: <https://brainbreak-motion-party.tuannx87.workers.dev>
 
@@ -26,16 +28,44 @@ for player in runtime.players {
 }
 ```
 
-This API has no Macroquad, TensorFlow.js, DOM, or Cloudflare dependency. Motion
-Reactor in `brainbreak-game` is the first application adapter: it projects live
-skeletons into spatial target zones and turns recognized actions into score,
-shockwave, and particle feedback.
+This API has no Macroquad, TensorFlow.js, DOM, or Cloudflare dependency.
+`brainbreak-game` is the Neon Beat Runner application adapter. It projects live
+skeletons onto runner avatars while `RunnerGame` keeps lane changes, obstacles,
+collision, lives, combo, scoring, and restart rules deterministic in the core.
 
-The shipped game is camera-first. Continuing without camera is a deliberately
-small guide-only option: cues remain visible, while scoring, combo, hit/miss
-evaluation, and outbound multiplayer actions stay disabled for untracked local
-players. Keyboard and gamepad preview instructions but cannot earn evaluated
-scores without camera tracking.
+The game is camera-first. Continuing without camera is a deliberately small
+guide-only option: the rhythm highway and cues remain visible, while collision
+evaluation, score, combo, lives, and outbound multiplayer actions stay disabled
+for untracked local players. Keyboard and gamepad can preview actions but cannot
+earn evaluated scores without camera tracking.
+
+## Runner controls
+
+| Camera action | Runner action |
+| --- | --- |
+| Lean or step left/right | Change one lane |
+| Jump | Clear cyan hurdles |
+| Squat | Pass under yellow gates |
+| Clap | Collect purple beat orbs and restart after game over |
+
+The first obstacle sequence teaches these verbs inline. Hazards combine distinct
+shapes, colors, and text cues so critical information is not color-only.
+
+## Music and audio-reactive lighting
+
+The release locally hosts **“Special Spotlight” by Kevin MacLeod**, a 126 BPM
+electronica track licensed under
+[Creative Commons Attribution 4.0](https://creativecommons.org/licenses/by/4.0/).
+The official source is
+[Incompetech](https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1600067&Search=Search).
+The original MP3 was transcoded to 128 kbps for web delivery; full attribution,
+modification notice, and SHA-256 are in `web/public/audio/ATTRIBUTION.md`.
+
+Browser audio owns playback because autoplay requires a user gesture. The WASM
+renderer reads a narrow beat-phase, beat-pulse, spectrum-energy, and playback
+contract. Those metrics drive the neon sun, road grid, skyline windows, pylons,
+obstacle glow, and particles. If music cannot start, gameplay continues with a
+deterministic 126 BPM visual clock.
 
 ## Local development
 
@@ -50,15 +80,13 @@ Run the Cloudflare signaling API in another terminal when testing rooms:
 npm run dev:worker
 ```
 
-Open the HTTPS/localhost URL, press **Enable camera & play**, and use `1`, `2`, or `3`
-to select Mirror Beat, Beat Strike, or Duo Groove. Keyboard fallback uses
-arrows/WASD, Q/E, Space, and C. Standard gamepads map the left stick/D-pad to
-movement, face buttons to jump/squat/clap, and shoulder buttons to raised hands.
-The backing pulse is generated locally with Web Audio and does not require a
-licensed audio asset.
+Open the HTTPS/localhost URL and press **Enable camera, music & run**. Keyboard
+preview uses arrows/A/D to change lanes, Space/W to jump, Down/S to squat, and C
+or Enter to clap. Standard gamepads map the left stick/D-pad to lanes and face
+buttons to jump/squat/clap.
 
-The visual authoring tool is available at `/studio.html`. Exported
-`.brainbreak.zip` packs can be imported from the game control panel.
+The visual authoring tool remains available at `/studio.html` for the underlying
+motion framework.
 
 ## Validation
 
@@ -70,6 +98,10 @@ npm run typecheck
 npm test
 npm run build
 ```
+
+Browser-facing changes also require an HTTP-served smoke test for JavaScript,
+release WASM, TensorFlow model loading, camera permission, audio startup,
+resize/orientation, focus recovery, and frame pacing.
 
 ## Cloudflare
 

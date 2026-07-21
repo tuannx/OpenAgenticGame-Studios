@@ -49,7 +49,11 @@ function securityHeaders(response: Response, pathname: string): Response {
   const isHtml = output.headers.get('content-type')?.startsWith('text/html') ?? false;
   if (isHtml) {
     output.headers.set('cache-control', 'no-cache');
-  } else if (pathname.startsWith('/assets/') || /\/brainbreak-game-[a-f0-9]{12}\.wasm$/.test(pathname)) {
+  } else if (
+    pathname.startsWith('/assets/')
+    || /\/brainbreak-game-[a-f0-9]{12}\.wasm$/.test(pathname)
+    || /\/audio\/[a-z0-9-]+-[a-f0-9]{12}\.mp3$/.test(pathname)
+  ) {
     output.headers.set('cache-control', 'public, max-age=31536000, immutable');
   } else if (pathname.endsWith('.wasm') || pathname.endsWith('mq_js_bundle.js')) {
     output.headers.set('cache-control', 'no-cache');
@@ -63,7 +67,13 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     if (url.pathname === '/health') {
-      return json({ status: 'ok', service: 'brainbreak-motion-party', schemaVersion: 1, build: env.BUILD_SHA ?? 'dev' });
+      return json({
+        status: 'ok',
+        service: 'brainbreak-motion-party',
+        game: 'neon-beat-runner',
+        schemaVersion: 2,
+        build: env.BUILD_SHA ?? 'dev',
+      });
     }
     if (url.pathname === '/api/rooms' && request.method === 'POST') {
       for (let attempt = 0; attempt < 5; attempt += 1) {

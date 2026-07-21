@@ -1,10 +1,12 @@
 #[cfg(target_arch = "wasm32")]
 use brainbreak_core::Keypoint;
-use brainbreak_core::{Action, GameMode, MotionInputFrame, MotionRuntime, PoseFrame};
+use brainbreak_core::{
+    Action, MotionInputFrame, MotionRuntime, PoseFrame, RunnerFeedback, RunnerGame, RunnerPhase,
+};
 use macroquad::prelude::*;
 
 mod visuals;
-use visuals::{MotionStage, draw_round_panel};
+use visuals::{AudioVisual, RunnerStage, draw_round_panel};
 
 #[cfg(target_arch = "wasm32")]
 const POSE_BUFFER_BYTES: usize = 512;
@@ -15,20 +17,25 @@ unsafe extern "C" {
     fn bb_take_remote_actions(player: u32) -> u32;
     fn bb_send_local_action(player: u32, mask: u32);
     fn bb_network_status() -> u32;
-    fn bb_custom_target(beat_index: u32) -> u32;
     fn bb_take_gamepad_actions(player: u32) -> u32;
     fn bb_evaluation_enabled(player: u32) -> u32;
+    fn bb_audio_beat_phase() -> f32;
+    fn bb_audio_pulse() -> f32;
+    fn bb_audio_energy() -> f32;
+    fn bb_audio_playing() -> u32;
+    fn bb_reduce_motion() -> u32;
+    fn bb_play_feedback(kind: u32);
 }
 
 #[cfg(target_arch = "wasm32")]
 #[unsafe(no_mangle)]
 pub extern "C" fn brainbreak_bridge_crate_version() -> u32 {
-    2
+    3
 }
 
 fn window_conf() -> Conf {
     Conf {
-        window_title: "BrainBreak Motion Party".to_owned(),
+        window_title: "Neon Beat Runner".to_owned(),
         window_width: 1280,
         window_height: 720,
         high_dpi: true,
@@ -114,7 +121,7 @@ fn browser_poses() -> Vec<PoseFrame> {
     Vec::new()
 }
 
-fn keyboard_actions() -> u32 {
+fn keyboard_actions(restart: bool) -> u32 {
     let mut mask = 0;
     if is_key_pressed(KeyCode::Left) || is_key_pressed(KeyCode::A) {
         mask |= Action::MoveLeft.mask();
@@ -128,13 +135,10 @@ fn keyboard_actions() -> u32 {
     if is_key_pressed(KeyCode::Down) || is_key_pressed(KeyCode::S) {
         mask |= Action::Squat.mask();
     }
-    if is_key_pressed(KeyCode::Q) {
-        mask |= Action::LeftUp.mask();
-    }
-    if is_key_pressed(KeyCode::E) {
-        mask |= Action::RightUp.mask();
-    }
-    if is_key_pressed(KeyCode::C) || is_key_pressed(KeyCode::Enter) {
+    if is_key_pressed(KeyCode::C)
+        || is_key_pressed(KeyCode::Enter)
+        || (restart && is_key_pressed(KeyCode::R))
+    {
         mask |= Action::Clap.mask();
     }
     mask
@@ -147,16 +151,6 @@ fn network_status() -> u32 {
     return 0;
 }
 
-fn custom_target(_beat_index: u32) -> Option<u32> {
-    #[cfg(target_arch = "wasm32")]
-    {
-        let mask = unsafe { bb_custom_target(_beat_index) };
-        return (mask != 0).then_some(mask);
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    None
-}
-
 fn evaluation_enabled(_player: u32) -> bool {
     #[cfg(target_arch = "wasm32")]
     return unsafe { bb_evaluation_enabled(_player) != 0 };
@@ -164,37 +158,60 @@ fn evaluation_enabled(_player: u32) -> bool {
     false
 }
 
-fn mode_color(mode: GameMode) -> Color {
-    match mode {
-        GameMode::MirrorBeat => Color::from_rgba(131, 92, 246, 255),
-        GameMode::BeatStrike => Color::from_rgba(236, 72, 153, 255),
-        GameMode::DuoGroove => Color::from_rgba(16, 185, 129, 255),
+fn reduce_motion() -> bool {
+    #[cfg(target_arch = "wasm32")]
+    return unsafe { bb_reduce_motion() != 0 };
+    #[cfg(not(target_arch = "wasm32"))]
+    false
+}
+
+fn audio_visual() -> AudioVisual {
+    #[cfg(target_arch = "wasm32")]
+    return unsafe {
+        AudioVisual {
+            phase: bb_audio_beat_phase().clamp(0.0, 1.0),
+            pulse: bb_audio_pulse().clamp(0.0, 1.0),
+            energy: bb_audio_energy().clamp(0.0, 1.0),
+            playing: bb_audio_playing() != 0,
+        }
+    };
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let phase = ((get_time() as f32) * 126.0 / 60.0).fract();
+        let distance = phase.min(1.0 - phase);
+        AudioVisual {
+            phase,
+            pulse: (-distance * 13.0).exp(),
+            energy: 0.18,
+            playing: false,
+        }
+    }
+}
+
+fn player_color(player: usize) -> Color {
+    match player {
+        0 => Color::from_rgba(34, 211, 238, 255),
+        1 => Color::from_rgba(196, 181, 253, 255),
+        2 => Color::from_rgba(251, 191, 36, 255),
+        _ => Color::from_rgba(52, 211, 153, 255),
     }
 }
 
 #[macroquad::main(window_conf)]
 async fn main() {
-    let mut runtime = MotionRuntime::default();
-    let mut motion_stage = MotionStage::default();
+    let mut motion = MotionRuntime::default();
+    let mut runner = RunnerGame::new();
+    let mut stage = RunnerStage::default();
 
     loop {
         let dt = get_frame_time().min(0.05);
-        if is_key_pressed(KeyCode::Key1) {
-            runtime.set_mode(GameMode::MirrorBeat);
-        } else if is_key_pressed(KeyCode::Key2) {
-            runtime.set_mode(GameMode::BeatStrike);
-        } else if is_key_pressed(KeyCode::Key3) {
-            runtime.set_mode(GameMode::DuoGroove);
-        } else if is_key_pressed(KeyCode::Tab) {
-            runtime.set_mode(runtime.game.mode.next());
-        }
-
         let poses = browser_poses();
-        let player_count = poses.len().max(1);
+        let network = network_status();
         let local_evaluation = [evaluation_enabled(0), evaluation_enabled(1)];
+        let guide_only = !local_evaluation.into_iter().any(|enabled| enabled);
         #[cfg(target_arch = "wasm32")]
         let (fallback_actions, remote_actions) = unsafe {
-            let mut fallback = [keyboard_actions(), 0];
+            let mut fallback = [keyboard_actions(runner.phase == RunnerPhase::GameOver), 0];
             fallback[0] |= bb_take_gamepad_actions(0);
             fallback[1] |= bb_take_gamepad_actions(1);
             (
@@ -203,188 +220,267 @@ async fn main() {
             )
         };
         #[cfg(not(target_arch = "wasm32"))]
-        let (fallback_actions, remote_actions) = ([keyboard_actions(), 0], [0, 0]);
+        let (fallback_actions, remote_actions) = (
+            [keyboard_actions(runner.phase == RunnerPhase::GameOver), 0],
+            [0, 0],
+        );
 
-        runtime.update(
+        motion.update(
             dt,
             MotionInputFrame {
                 local_poses: [poses.first().copied(), poses.get(1).copied()],
                 fallback_actions,
                 remote_actions,
-                evaluation_enabled: [local_evaluation[0], local_evaluation[1], true, true],
-                custom_target: custom_target(runtime.game.beat_index),
+                evaluation_enabled: [
+                    local_evaluation[0],
+                    local_evaluation[1],
+                    network >= 2,
+                    network >= 2,
+                ],
+                custom_target: None,
             },
         );
         #[cfg(target_arch = "wasm32")]
         unsafe {
-            for (player, mask) in runtime.local_evaluated_triggered().into_iter().enumerate() {
+            for (player, mask) in motion.local_evaluated_triggered().into_iter().enumerate() {
                 if mask != 0 {
                     bb_send_local_action(player as u32, mask);
                 }
             }
         }
-        motion_stage.update(dt, &runtime);
+
+        let active = motion.players.map(|player| player.active);
+        let triggered = motion.players.map(|player| {
+            if player.evaluation_enabled {
+                player.triggered
+            } else {
+                0
+            }
+        });
+        let evaluation = motion.players.map(|player| player.evaluation_enabled);
+        runner.update(dt, active, triggered, evaluation);
+        #[cfg(target_arch = "wasm32")]
+        unsafe {
+            for feedback in runner.feedback {
+                let kind = match feedback {
+                    RunnerFeedback::None => 0,
+                    RunnerFeedback::Dodge => 1,
+                    RunnerFeedback::Crash => 2,
+                    RunnerFeedback::BeatPickup => 3,
+                };
+                if kind != 0 {
+                    bb_play_feedback(kind);
+                }
+            }
+        }
+        stage.update(dt, &runner);
 
         let width = screen_width();
         let height = screen_height();
-        let accent = mode_color(runtime.game.mode);
-        clear_background(Color::from_rgba(8, 12, 28, 255));
-        draw_circle(
-            width * 0.15,
-            height * 0.22,
-            width * 0.22,
-            Color::new(accent.r, accent.g, accent.b, 0.12),
-        );
-        draw_circle(
-            width * 0.88,
-            height * 0.82,
-            width * 0.28,
-            Color::new(0.12, 0.75, 0.95, 0.10),
-        );
-
-        let margin = (width * 0.045).max(24.0);
-        draw_text("BRAINBREAK", margin, 48.0, 30.0, WHITE);
-        draw_text("MOTION REACTOR", margin, 76.0, 18.0, accent);
-        let local_scoring = runtime.players[..2]
-            .iter()
-            .any(|player| player.evaluation_enabled);
-        let status = if !local_scoring {
-            "GUIDANCE ONLY"
+        let audio = audio_visual();
+        let reduced = reduce_motion();
+        let shake = if reduced {
+            Vec2::ZERO
         } else {
-            match network_status() {
-                3 => "HOST ONLINE",
-                2 => "P2P CONNECTED",
-                1 => "CONNECTING",
-                _ => "LOCAL PARTY",
-            }
-        };
-        let status_width = measure_text(status, None, 18, 1.0).width;
-        draw_text(
-            status,
-            width - margin - status_width,
-            54.0,
-            18.0,
-            Color::from_rgba(148, 163, 184, 255),
-        );
-
-        let stage_x = if width >= 900.0 { width * 0.20 } else { margin };
-        let stage_w = if width >= 900.0 {
-            width * 0.60
-        } else {
-            width - margin * 2.0
-        };
-        let stage_y = if height < 620.0 { 84.0 } else { 98.0 };
-        let stage_h = if width < 700.0 {
-            height * 0.55
-        } else {
-            (height - 280.0).max(300.0)
-        };
-        let stage = Rect::new(stage_x, stage_y, stage_w, stage_h);
-        motion_stage.draw(&runtime, stage, accent);
-        if !local_scoring {
-            let warning = "CAMERA TRACKING REQUIRED FOR SCORING & EVALUATION";
-            let warning_size = measure_text(warning, None, 14, 1.0);
-            draw_rectangle(
-                stage.x + (stage.w - warning_size.width) * 0.5 - 12.0,
-                stage.y + 22.0,
-                warning_size.width + 24.0,
-                28.0,
-                Color::from_rgba(69, 26, 3, 225),
-            );
-            draw_text(
-                warning,
-                stage.x + (stage.w - warning_size.width) * 0.5,
-                stage.y + 42.0,
-                14.0,
-                Color::from_rgba(253, 230, 138, 255),
-            );
-        }
-        draw_rectangle(
-            stage.x + 18.0,
-            stage.y + 10.0,
-            (stage.w - 36.0) * runtime.game.beat_progress,
-            5.0,
-            accent,
-        );
-        let mode_label = format!(
-            "{}  •  {}",
-            runtime.game.mode.title(),
-            runtime.game.target.label()
-        );
-        let ready_size = measure_text(&mode_label, None, 17, 1.0);
-        draw_text(
-            &mode_label,
-            width * 0.5 - ready_size.width * 0.5,
-            stage.y - 12.0,
-            17.0,
-            Color::from_rgba(148, 163, 184, 255),
-        );
-
-        let displayed_players = if network_status() >= 2 {
-            4
-        } else {
-            player_count.max(2)
-        };
-        let gap = 12.0;
-        let card_w = ((width - margin * 2.0 - gap * (displayed_players as f32 - 1.0))
-            / displayed_players as f32)
-            .min(260.0);
-        let cards_total =
-            card_w * displayed_players as f32 + gap * (displayed_players as f32 - 1.0);
-        let start_x = (width - cards_total) * 0.5;
-        let card_y = stage.y + stage.h + 14.0;
-        for player in 0..displayed_players {
-            let x = start_x + player as f32 * (card_w + gap);
-            draw_round_panel(
-                Rect::new(x, card_y, card_w, 78.0),
-                Color::from_rgba(15, 23, 42, 245),
-            );
-            draw_text(
-                format!("P{}", player + 1),
-                x + 16.0,
-                card_y + 25.0,
-                15.0,
-                Color::from_rgba(148, 163, 184, 255),
-            );
-            if runtime.players[player].evaluation_enabled {
-                draw_text(
-                    runtime.game.scores[player].to_string(),
-                    x + 16.0,
-                    card_y + 57.0,
-                    28.0,
-                    WHITE,
-                );
-                draw_text(
-                    format!("x{}", runtime.game.combos[player]),
-                    x + card_w - 54.0,
-                    card_y + 55.0,
-                    16.0,
-                    accent,
-                );
+            let crash = runner.feedback.contains(&RunnerFeedback::Crash);
+            if crash {
+                vec2(
+                    (get_time() as f32 * 91.0).sin() * 5.0,
+                    (get_time() as f32 * 73.0).cos() * 3.0,
+                )
             } else {
-                draw_text(
-                    "NO SCORE",
-                    x + 16.0,
-                    card_y + 55.0,
-                    16.0,
-                    Color::from_rgba(251, 191, 36, 255),
-                );
+                Vec2::ZERO
             }
-        }
-
-        if height >= 650.0 {
-            let help =
-                "1/2/3 MODE  •  MOVE INTO THE GLOWING ZONE  •  Q/E HANDS  •  SPACE JUMP  •  C CLAP";
-            let help_size = measure_text(help, None, 13, 1.0);
-            draw_text(
-                help,
-                width * 0.5 - help_size.width * 0.5,
-                height - 18.0,
-                13.0,
-                Color::from_rgba(100, 116, 139, 255),
-            );
-        }
+        };
+        clear_background(Color::from_rgba(4, 5, 20, 255));
+        let world_bounds = Rect::new(shake.x, shake.y, width, height);
+        stage.draw(&runner, &motion, world_bounds, audio, reduced);
+        draw_header(width, audio, guide_only);
+        draw_player_hud(width, height, &runner, network);
+        draw_phase_overlay(width, height, &runner, guide_only, poses.len());
+        draw_beat_meter(width, height, audio);
 
         next_frame().await;
     }
+}
+
+fn draw_header(width: f32, audio: AudioVisual, guide_only: bool) {
+    let margin = (width * 0.03).max(18.0);
+    draw_text(
+        "NEON",
+        margin,
+        36.0,
+        18.0,
+        Color::from_rgba(103, 232, 249, 255),
+    );
+    draw_text("BEAT RUNNER", margin, 65.0, 29.0, WHITE);
+    let state = if guide_only {
+        "GUIDANCE ONLY"
+    } else if audio.playing {
+        "126 BPM / LIVE"
+    } else {
+        "126 BPM / VISUAL CLOCK"
+    };
+    let size = measure_text(state, None, 14, 1.0);
+    draw_text(
+        state,
+        width - margin - size.width,
+        34.0,
+        14.0,
+        if guide_only {
+            Color::from_rgba(253, 230, 138, 255)
+        } else {
+            Color::from_rgba(196, 181, 253, 255)
+        },
+    );
+}
+
+fn draw_player_hud(width: f32, height: f32, runner: &RunnerGame, network: u32) {
+    let displayed = if network >= 2 {
+        4
+    } else {
+        runner
+            .players
+            .iter()
+            .take(2)
+            .filter(|player| player.evaluated)
+            .count()
+            .max(1)
+    };
+    let card_width = if width < 700.0 { 142.0 } else { 174.0 };
+    let gap = 10.0;
+    let total = displayed as f32 * card_width + (displayed.saturating_sub(1)) as f32 * gap;
+    let start_x = (width - total) * 0.5;
+    let y = height - if height < 620.0 { 72.0 } else { 86.0 };
+    for player in 0..displayed {
+        let state = runner.players[player];
+        let x = start_x + player as f32 * (card_width + gap);
+        draw_round_panel(
+            Rect::new(x, y, card_width, 58.0),
+            Color::new(0.025, 0.035, 0.11, 0.88),
+        );
+        draw_rectangle(x, y, 4.0, 58.0, player_color(player));
+        draw_text(
+            format!("P{}  {:05}", player + 1, state.score),
+            x + 14.0,
+            y + 24.0,
+            17.0,
+            if state.evaluated {
+                WHITE
+            } else {
+                Color::from_rgba(148, 163, 184, 255)
+            },
+        );
+        let detail = if state.evaluated {
+            format!("LIVES {}   COMBO x{}", state.lives, state.combo)
+        } else {
+            "NO CAMERA / NO SCORE".to_owned()
+        };
+        draw_text(&detail, x + 14.0, y + 45.0, 11.0, player_color(player));
+    }
+}
+
+fn draw_phase_overlay(
+    width: f32,
+    height: f32,
+    runner: &RunnerGame,
+    guide_only: bool,
+    tracked_players: usize,
+) {
+    if runner.phase == RunnerPhase::Running && !guide_only {
+        return;
+    }
+    let panel_width = width.min(560.0) * 0.86;
+    let panel_height = if runner.phase == RunnerPhase::GameOver {
+        188.0
+    } else {
+        132.0
+    };
+    let panel = Rect::new(
+        (width - panel_width) * 0.5,
+        height * 0.48 - panel_height * 0.5,
+        panel_width,
+        panel_height,
+    );
+    draw_round_panel(panel, Color::new(0.015, 0.02, 0.09, 0.9));
+    draw_rectangle_lines(
+        panel.x,
+        panel.y,
+        panel.w,
+        panel.h,
+        2.0,
+        Color::new(0.45, 0.32, 0.95, 0.62),
+    );
+    let (title, subtitle, color) = if runner.phase == RunnerPhase::GameOver {
+        let score = runner
+            .players
+            .iter()
+            .map(|player| player.score)
+            .max()
+            .unwrap_or(0);
+        (
+            "RUN COMPLETE".to_owned(),
+            format!("SCORE {score}  /  CLAP TO RUN AGAIN"),
+            Color::from_rgba(251, 113, 133, 255),
+        )
+    } else if guide_only {
+        (
+            "CAMERA REQUIRED TO SCORE".to_owned(),
+            "Enable motion to steer, jump, squat and clap".to_owned(),
+            Color::from_rgba(253, 230, 138, 255),
+        )
+    } else if tracked_players == 0 {
+        (
+            "STEP INTO THE FRAME".to_owned(),
+            "Your neon runner mirrors your body".to_owned(),
+            Color::from_rgba(103, 232, 249, 255),
+        )
+    } else {
+        (
+            "LOCKING ON".to_owned(),
+            "Stand tall - first obstacle incoming".to_owned(),
+            Color::from_rgba(103, 232, 249, 255),
+        )
+    };
+    let title_size = measure_text(&title, None, 30, 1.0);
+    draw_text(
+        &title,
+        panel.x + (panel.w - title_size.width) * 0.5,
+        panel.y + 52.0,
+        30.0,
+        color,
+    );
+    let subtitle_size = measure_text(&subtitle, None, 16, 1.0);
+    draw_text(
+        &subtitle,
+        panel.x + (panel.w - subtitle_size.width) * 0.5,
+        panel.y + 84.0,
+        16.0,
+        Color::from_rgba(226, 232, 240, 255),
+    );
+    if runner.phase == RunnerPhase::GameOver {
+        let hint = "LEFT/RIGHT = LEAN  /  JUMP  /  SQUAT  /  CLAP";
+        let hint_size = measure_text(hint, None, 12, 1.0);
+        draw_text(
+            hint,
+            panel.x + (panel.w - hint_size.width) * 0.5,
+            panel.y + 126.0,
+            12.0,
+            Color::from_rgba(148, 163, 184, 255),
+        );
+    }
+}
+
+fn draw_beat_meter(width: f32, height: f32, audio: AudioVisual) {
+    let meter_width = width.min(420.0) * 0.7;
+    let x = (width - meter_width) * 0.5;
+    let y = if height < 620.0 { 76.0 } else { 82.0 };
+    draw_rectangle(x, y, meter_width, 3.0, Color::new(1.0, 1.0, 1.0, 0.12));
+    draw_rectangle(
+        x,
+        y,
+        meter_width * audio.phase,
+        3.0 + audio.energy * 3.0,
+        Color::new(0.25 + audio.energy * 0.4, 0.85, 1.0, 0.9),
+    );
 }
