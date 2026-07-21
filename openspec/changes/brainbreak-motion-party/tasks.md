@@ -26,5 +26,5 @@
 ## M5 - Release
 
 - [x] Run Rust, TypeScript, Worker, WASM, and HTTP/protocol gates.
-- [ ] Deploy the first production Worker to Cloudflare Workers.dev.
-- [ ] Verify the production URL and push the feature branch.
+- [x] Deploy the first production Worker to Cloudflare Workers.dev.
+- [x] Verify the production URL and publish the feature branch.

@@ -4,6 +4,8 @@ Macroquad/WebAssembly party games controlled by one or two people in a browser
 camera. The browser performs pose inference locally; only recognized action
 events are sent through WebRTC.
 
+Live build: <https://brainbreak-motion-party.tuannx87.workers.dev>
+
 ## Local development
 
 ```bash
