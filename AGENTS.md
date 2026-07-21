@@ -28,6 +28,18 @@ This repository is Codex-native. Use this file as the primary project instructio
 - Codex workflows: `.codex/workflows/`
 - Codex core gates: `.codex/core/`
 
+## Macroquad Rust/WASM
+
+For Macroquad projects, load:
+
+- Specialist: `refenrece/agents/programming/macroquad-specialist.md`
+- Skill: `refenrece/skills/macroquad-rust-wasm/SKILL.md`
+- Version reference: `docs/engine-reference/macroquad/VERSION.md`
+
+Validate native Rust behavior and the release `wasm32-unknown-unknown` artifact
+separately. Browser-facing changes also require an HTTP-served smoke test; a
+successful Cargo build alone is not browser-runtime proof.
+
 ## Replacement policy
 
 - Do not add new `.claude/` configuration. The former Claude Code integration has been replaced by `AGENTS.md` and `.codex/`.

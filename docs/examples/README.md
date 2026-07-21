@@ -1,6 +1,6 @@
 # OpenAgenticGame - Agent First Game Dev AI Game Studios - Collaborative Session Examples
 
-This directory contains realistic, end-to-end session transcripts showing how the OpenAgenticGame Agent Architecture works in practice. Each example demonstrates the **collaborative workflow** where 85 specialized agents across 9 teams ask questions, present options, and wait for user approval rather than autonomously generating content.
+This directory contains realistic, end-to-end session transcripts showing how the OpenAgenticGame Agent Architecture works in practice. Each example demonstrates the **collaborative workflow** where 86 specialized agents across 9 teams ask questions, present options, and wait for user approval rather than autonomously generating content.
 
 ---
 

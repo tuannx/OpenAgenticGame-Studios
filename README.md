@@ -33,7 +33,7 @@ We broke free from single-AI limitations. Our **universal reference system** (`r
 **Advanced Development Layer**: We've integrated **BMAD + OpenSpec + Harness** methodologies into our `.codex/` folder, creating a sophisticated development framework that brings enterprise-grade workflow management to ANY AI IDE. This includes Quick/BMM modes, task decomposition, milestone validation, and automated quality gates — all portable across AI platforms.
 
 ### 🏗️ **Enterprise-Grade Coordination**  
-We scaled from basic agent assistance to a full studio architecture. While others offer simple chatbots, we provide **85 specialized agents** organized into **9 professional teams** with real studio hierarchies: executive leadership, department heads, specialists, and quality gates. This isn't just assistance — it's a complete production pipeline.
+We scaled from basic agent assistance to a full studio architecture. While others offer simple chatbots, we provide **86 specialized agents** organized into **9 professional teams** with real studio hierarchies: executive leadership, department heads, specialists, and quality gates. This isn't just assistance — it's a complete production pipeline.
 
 ### ⚡ **Instant Studio Transformation**
 Our reference-based approach means **zero setup time**. Any AI IDE that can read files instantly becomes a full game development studio with all agents, skills, and quality standards. No configuration, no integration headaches — instant professional-grade game development capability.
@@ -62,8 +62,8 @@ The result: you choose your preferred AI environment, we provide the complete st
 
 | Category | Count | Description |
 |----------|-------|-------------|
-| **Agents** | 85 | Specialized agents across 9 teams: Leadership(8), Programming(29), Design(13), Art(11), QA(7), Production(13), Publish(7), Support(2), Enhanced(4) |
-| **Skills** | 72 | Universal slash commands for common workflows (`/start`, `/sprint-plan`, `/code-review`, `/brainstorm`, etc.) |
+| **Agents** | 86 | Specialized agents across 9 teams, including dedicated Macroquad Rust/WASM support |
+| **Skills** | 73 | Universal slash commands for common workflows (`/start`, `/sprint-plan`, `/code-review`, `/brainstorm`, `/macroquad-rust-wasm`, etc.) |
 | **Rules** | 12 | Path-scoped coding standards enforced when editing gameplay, engine, AI, UI, network code, and more |
 | **Templates** | 28 | Document templates for GDDs, ADRs, sprint plans, economy models, faction design, and more |
 | **Platforms** | 6 | Quality standards and certification for Steam, Mobile, Console, Epic Games Store, and Browser platforms |
@@ -90,8 +90,8 @@ The core innovation of OpenAgenticGame Studios is our **universal reference syst
 ### Reference Structure
 ```
 refenrece/
-├── agents/     # 85 specialized agent definitions
-├── skills/      # 72 universal skill implementations  
+├── agents/     # 86 specialized agent definitions
+├── skills/      # 73 universal skill implementations
 ├── rules/       # 12 coding standards and quality rules
 └── docs/        # Comprehensive documentation
 ```
@@ -146,7 +146,7 @@ Enhanced Team (4 agents)
 
 ### Engine Specialists
 
-The template includes agent sets for all four major engines. Use the set that matches your project:
+The template includes agent sets for five supported engine/framework paths. Use the set that matches your project:
 
 | Engine | Lead Agent | Sub-Specialists |
 |--------|-----------|-----------------|
@@ -154,10 +154,11 @@ The template includes agent sets for all four major engines. Use the set that ma
 | **Unity** | `unity-specialist` | DOTS/ECS, Shaders/VFX, Addressables, UI Toolkit, Asset Guidelines |
 | **Unreal Engine 5** | `unreal-specialist` | GAS, Blueprints, Replication, UMG/CommonUI |
 | **Cocos Creator** | `cocos-creator-specialist` | Development, Automation |
+| **Macroquad** | `macroquad-specialist` | Rust, native builds, WebAssembly, responsive browser delivery |
 
 ## Slash Commands
 
-Use Codex prompts or slash-style task names to invoke the 72 reference skills:
+Use Codex prompts or slash-style task names to invoke the 73 reference skills:
 
 **Reviews & Analysis**
 `/design-review` `/code-review` `/balance-check` `/asset-audit` `/scope-check` `/perf-profile` `/tech-debt`
@@ -173,6 +174,9 @@ Use Codex prompts or slash-style task names to invoke the 72 reference skills:
 
 **Creative**
 `/brainstorm` `/playtest-report` `/prototype` `/onboard` `/localize`
+
+**Engine Toolchains**
+`/setup-engine macroquad` `/macroquad-rust-wasm`
 
 **Team Orchestration** (coordinate multiple agents on a single feature)
 `/team-combat` `/team-narrative` `/team-ui` `/team-release` `/team-polish` `/team-audio` `/team-level`
@@ -212,8 +216,8 @@ Use Codex prompts or slash-style task names to invoke the 72 reference skills:
 🌟 Universal Architecture (AI-Platform Agnostic)
 │
 ├── refenrece/                          # UNIVERSAL REFERENCE SYSTEM - Core Architecture
-│   ├── agents/                        # 85 specialized agent definitions
-│   ├── skills/                        # 72 universal skill implementations  
+│   ├── agents/                        # 86 specialized agent definitions
+│   ├── skills/                        # 73 universal skill implementations
 │   ├── rules/                         # 12 coding standards and quality rules
 │   └── docs/                         # Comprehensive documentation for all AI platforms
 │

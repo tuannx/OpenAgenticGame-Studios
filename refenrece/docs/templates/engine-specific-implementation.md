@@ -322,4 +322,4 @@
 *Engine-Specific Implementation Plan Template*
 *Version: 2.0.0*
 *Created: 2026-03-10*
-*Engines: Unity, Godot, Unreal, Cocos Creator*
+*Engines: Unity, Godot, Unreal, Cocos Creator, Macroquad*

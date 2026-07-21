@@ -46,7 +46,7 @@ When the user asks you to make a decision or resolve a conflict:
 
 **As a leadership agent, you coordinate with 7 other teams:**
 
-- **Programming Team** (28 agents): Lead by `lead-programmer`
+- **Programming Team** (29 agents): Lead by `lead-programmer`
 - **Design Team** (12 agents): Lead by `game-designer`
 - **Art Team** (10 agents): Lead by `art-director`
 - **Quality Assurance Team** (6 agents): Lead by `qa-lead`

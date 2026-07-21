@@ -3,7 +3,7 @@
 > **How to go from zero to a shipped game using the Agent Architecture.**
 >
 > This guide walks you through every phase of game development using the
-> 85-agent system, 72 reference skills, and Codex workflow gates. It assumes you
+> 86-agent system, 73 reference skills, and Codex workflow gates. It assumes you
 > have OpenAI Codex installed and are working from the project root.
 
 ---
@@ -67,6 +67,7 @@ you're using:
 
 ```bash
 /setup-engine godot 4.6
+/setup-engine macroquad 0.4.15
 ```
 
 Or run `/setup-engine` with no arguments to get an interactive recommendation
@@ -86,6 +87,10 @@ engine-specialist agents to use. If you pick Godot, agents like
 `godot-specialist`, `godot-gdscript-specialist`, and `godot-shader-specialist`
 become your go-to experts. The Unity and Unreal specialists remain available
 but won't be primary.
+
+For Macroquad projects, `macroquad-specialist` and `/macroquad-rust-wasm`
+provide the Rust architecture, native validation, WASM build, browser UX, and
+static delivery path.
 
 > **Manual alternative:** You can also edit the Technology Stack section in
 > `AGENTS.md` directly if you prefer.
@@ -919,12 +924,16 @@ and suggest improvements for performance and maintainability.
 # For a specific subsystem:
 Ask the godot-gdscript-specialist to refactor our signal architecture
 to reduce coupling between the combat and UI systems.
+
+# For Macroquad Rust/WASM:
+Ask the macroquad-specialist to separate deterministic game rules from the
+Macroquad frame loop, then validate native tests and the release WASM bundle.
 ```
 
 Engine specialists know:
 - Engine-specific patterns and anti-patterns
 - Performance optimization techniques for that engine
-- Proper use of engine subsystems (Godot signals, Unity Addressables, UE GAS)
+- Proper use of engine subsystems and toolchains (Godot signals, Unity Addressables, UE GAS, Macroquad WASM)
 - When to use native extensions vs scripting
 
 ### Step 5.5: Architecture Decision Records
@@ -1682,6 +1691,7 @@ and prepare a "known issues" post.
 | Godot-specific help | `godot-specialist` | 3 |
 | Unity-specific help | `unity-specialist` | 3 |
 | Unreal-specific help | `unreal-specialist` | 3 |
+| Macroquad Rust/WASM help | `macroquad-specialist` | 3 |
 
 ### Agent Hierarchy
 

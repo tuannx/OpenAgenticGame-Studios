@@ -237,4 +237,4 @@ func _physics_process(delta: float) -> void:
 *Version: 2.0.0*
 *Update Date: 2026-03-10*
 *Teams: Programming Team*
-*Engines: Unity, Godot, Unreal, Cocos Creator*
+*Engines: Unity, Godot, Unreal, Cocos Creator, Macroquad*

@@ -295,4 +295,4 @@ func _ready() -> void:
 *Update Date: 2026-03-10*
 *Teams: Art Team, Programming Team*
 *Integration: Design Team, Audio Team, QA Team*
-*Engines: Unity, Godot, Unreal, Cocos Creator*
+*Engines: Unity, Godot, Unreal, Cocos Creator, Macroquad*

@@ -1,5 +1,5 @@
 {
-  "totalSkills": 72,
+  "totalSkills": 73,
   "skills": [
     {
       "name": "aesthetic-direction-framework",
@@ -164,6 +164,11 @@
     {
       "name": "localize",
       "path": "refenrece/skills/localize",
+      "hasSkillMd": true
+    },
+    {
+      "name": "macroquad-rust-wasm",
+      "path": "refenrece/skills/macroquad-rust-wasm",
       "hasSkillMd": true
     },
     {

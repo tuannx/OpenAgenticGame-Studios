@@ -3,11 +3,11 @@
 ## 🎯 What Is This?
 
 This is a complete Claude Code agent architecture for game development. It
-organizes **79 specialized AI agents** into a studio hierarchy that mirrors
+organizes **80 specialized AI agents** into a studio hierarchy that mirrors
 real game development teams, with defined responsibilities, delegation
 rules, and coordination protocols. It includes engine-specialist agents
-for Unity, Godot, Unreal, and Cocos Creator — each with dedicated sub-specialists for
-major engine subsystems. All design agents and templates are grounded in
+for Unity, Godot, Unreal, Cocos Creator, and Macroquad — with dedicated
+specialists for major engine or toolchain concerns. All design agents and templates are grounded in
 established game design theory (MDA Framework, Self-Determination Theory,
 Flow State, Bartle Player Types). Use whichever engine set matches your project.
 
@@ -16,7 +16,7 @@ Flow State, Bartle Player Types). Use whichever engine set matches your project.
 ### **8 Teams** - Complete Studio Structure
 
 1. **Leadership Team** (7 agents) - Project vision and strategic direction
-2. **Programming Team** (28 agents) - Technical implementation and engine expertise
+2. **Programming Team** (29 agents) - Technical implementation and engine expertise
 3. **Design Team** (12 agents) - Game design and content creation
 4. **Art Team** (10 agents) - Visual art and user experience
 5. **Quality Assurance Team** (6 agents) - Testing and quality control
@@ -92,6 +92,11 @@ Choose the right engine specialists for your project:
 #### **Cocos Creator Projects**
 - `cocos-creator-specialist` -- Cocos Creator development and optimization
 
+#### **Macroquad Rust/WASM Projects**
+- `macroquad-specialist` -- Rust game architecture, native builds, browser WASM,
+  responsive input/UI, performance, and static web delivery
+- `/macroquad-rust-wasm` -- implementation and validation workflow
+
 ### **4. Start with the Right Workflow**
 
 #### **New Projects**
@@ -161,6 +166,7 @@ Choose the right engine specialists for your project:
 - **Godot**: Best for 2D games, indie projects, open-source preference
 - **Unreal**: Best for 3D AAA games, high-fidelity graphics
 - **Cocos Creator**: Best for web games, mobile games, HTML5
+- **Macroquad**: Best for lightweight code-first 2D games targeting native and browser WASM
 
 ### **Engine Setup**
 ```bash
@@ -168,6 +174,7 @@ Choose the right engine specialists for your project:
 /setup-engine godot        # Configure Godot project
 /setup-engine unreal       # Configure Unreal project
 /setup-engine cocos        # Configure Cocos Creator project
+/setup-engine macroquad    # Configure Macroquad + Rust/WASM project
 ```
 
 ## 📊 Team Size Recommendations
@@ -266,9 +273,9 @@ Choose the right engine specialists for your project:
 *Version: 2.0.0*
 *Update Date: 2026-03-10*
 *Organization: Team-Based Structure*
-*Total Agents: 79*
+*Total Agents: 80*
 *Total Teams: 8*
-*Engines: Unity, Godot, Unreal, Cocos Creator*
+*Engines: Unity, Godot, Unreal, Cocos Creator, Macroquad*
 | Manage a release | `release-manager` |
 | Prepare strings for translation | `localization-lead` |
 | Test a mechanic idea quickly | `prototyper` |
@@ -277,6 +284,7 @@ Choose the right engine specialists for your project:
 | Get Unreal Engine advice | `unreal-specialist` |
 | Get Unity advice | `unity-specialist` |
 | Get Godot advice | `godot-specialist` |
+| Build a Rust/WASM game | `macroquad-specialist` / `/macroquad-rust-wasm` |
 | Design GAS abilities/effects | `ue-gas-specialist` |
 | Define BP/C++ boundaries | `ue-blueprint-specialist` |
 | Implement UE replication | `ue-replication-specialist` |
@@ -380,8 +388,8 @@ If you already know what you need, jump directly to the relevant path:
    - Generates 3 concepts, helps you pick one, defines core loop and pillars
    - Produces a game concept document and recommends an engine
 2. **Set up the engine** — Run `/setup-engine` (uses the brainstorm recommendation)
-   - Configures CLAUDE.md, detects knowledge gaps, populates reference docs
-   - Creates `.claude/docs/technical-preferences.md` with naming conventions,
+   - Configures `AGENTS.md`, detects knowledge gaps, populates reference docs
+   - Creates `docs/technical-preferences.md` with naming conventions,
      performance budgets, and engine-specific defaults
    - If the engine version is newer than the LLM's training data, it fetches
      current docs from the web so agents suggest correct APIs

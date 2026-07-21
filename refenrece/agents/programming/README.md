@@ -33,6 +33,7 @@
 - **Ue Umg Specialist**: `ue-umg-specialist.md`
 - **Cocos Creator Specialist**: `cocos-creator-specialist.md`
 - **Cocos Skills Automation**: `cocos-skills-automation.md`
+- **Macroquad Specialist**: `macroquad-specialist.md`
 - **Skill Creation Specialist**: `skill-creation-specialist.md`
 
 ## 🎯 主要职责
@@ -64,6 +65,7 @@
 - **ue-umg-specialist**: 负责编程开发和技术实现相关工作
 - **cocos-creator-specialist**: 负责编程开发和技术实现相关工作
 - **cocos-skills-automation**: 负责编程开发和技术实现相关工作
+- **macroquad-specialist**: 负责 Rust/Macroquad 原生与 WebAssembly 游戏架构、验证和交付
 - **skill-creation-specialist**: 负责编程开发和技术实现相关工作
 
 ## 🔄 协作关系
@@ -75,5 +77,5 @@
 ---
 
 *团队文档生成时间: 2026-03-09T22:34:43.643Z*
-*团队规模: 28个成员*
+*团队规模: 29个成员*
 *所属项目: Claude Code Game Studios*

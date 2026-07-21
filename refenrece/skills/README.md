@@ -8,6 +8,7 @@ This directory contains the original skill files that have been integrated into 
 skills/
 ├── godot/                    # Godot-Claude-Skills-main
 ├── cocos-creator/            # cocos-creator-dev-skill-main
+├── macroquad-rust-wasm/      # Rust + Macroquad native/WASM workflow
 ├── narrative-game/           # narrative-game-skill-main
 └── unity-skills/             # OH-Unity-GameDev-Skills-main
 ```
@@ -25,6 +26,7 @@ skills/
 - ✅ cocos-creator-dev-skill-main → Cocos Creator Specialist
 - ✅ narrative-game-skill-main → Narrative Game Generator
 - ✅ OH-Unity-GameDev-Skills-main → Unity Development Specialist + Animation Specialists
+- ✅ macroquad-rust-wasm → Macroquad Specialist
 
 ## Usage
 

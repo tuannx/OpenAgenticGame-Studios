@@ -24,6 +24,11 @@ These become mandatory when the touched area demands them:
 - `node scripts/seo/check-seo-coverage.js` for locale SEO and coverage changes
 - `npm run i18n:check` for i18n or translated-output changes
 - `npm run prebuild` when multiple generation steps are directly affected
+- `refenrece/skills/macroquad-rust-wasm/scripts/validate.sh <project-path>` for
+  Macroquad native/WASM code or delivery changes
+
+For Macroquad browser-facing changes, the script proves Rust and WASM build
+health but does not replace an HTTP-served browser smoke test.
 
 ## Skip Rule
 

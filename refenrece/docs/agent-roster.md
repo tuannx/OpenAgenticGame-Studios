@@ -5,7 +5,7 @@ The following agents are available, organized by team structure. Each has a dedi
 ## 🎯 Team Structure Overview
 
 - **Leadership Team** (7 agents) - Project vision and strategic direction
-- **Programming Team** (28 agents) - Technical implementation and engine expertise  
+- **Programming Team** (29 agents) - Technical implementation and engine expertise
 - **Design Team** (12 agents) - Game design and content creation
 - **Art Team** (10 agents) - Visual art and user experience
 - **Quality Assurance Team** (6 agents) - Testing and quality control
@@ -76,6 +76,11 @@ The following agents are available, organized by team structure. Each has a dedi
 |-------|--------|-------------|
 | `cocos-creator-specialist` | Cocos Creator development | Cocos Creator 3.x, TypeScript, components |
 | `cocos-skills-automation` | Cocos automation | CLI tools, scene management, batch operations |
+
+### Macroquad Specialist
+| Agent | Domain | When to Use |
+|-------|--------|-------------|
+| `macroquad-specialist` | Rust + Macroquad + WASM | Macroquad architecture, game loops, native/web builds, responsive browser UX, performance, and static deployment |
 
 ### Skill Specialists
 | Agent | Domain | When to Use |
@@ -217,14 +222,14 @@ The following agents are available, organized by team structure. Each has a dedi
 | Team | Total Agents | Opus | Sonnet | Haiku |
 |-------|-------------|------|--------|-------|
 | **Leadership** | 7 | 7 | 0 | 0 |
-| **Programming** | 28 | 0 | 28 | 0 |
+| **Programming** | 29 | 0 | 29 | 0 |
 | **Design** | 12 | 0 | 12 | 0 |
 | **Art** | 10 | 0 | 6 | 4 |
 | **Quality Assurance** | 6 | 0 | 4 | 2 |
 | **Production** | 12 | 0 | 8 | 4 |
 | **Support** | 2 | 0 | 2 | 0 |
 | **Enhanced** | 4 | 0 | 4 | 0 |
-| **Total** | **79** | **7** | **64** | **10** |
+| **Total** | **80** | **7** | **65** | **10** |
 
 ---
 
@@ -246,6 +251,7 @@ The following agents are available, organized by team structure. Each has a dedi
 | `unreal-specialist` | Unreal Engine 5 | Sonnet | Blueprint vs C++, GAS overview, UE subsystems, Unreal optimization |
 | `unity-specialist` | Unity | Sonnet | MonoBehaviour vs DOTS, Addressables, URP/HDRP, Unity optimization |
 | `godot-specialist` | Godot 4 | Sonnet | GDScript patterns, node/scene architecture, signals, Godot optimization |
+| `macroquad-specialist` | Macroquad | Sonnet | Rust architecture, async frame loops, native/WASM delivery, responsive browser UX |
 
 ### Unreal Engine Sub-Specialists
 

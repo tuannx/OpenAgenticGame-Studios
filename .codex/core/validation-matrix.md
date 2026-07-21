@@ -109,3 +109,29 @@ If fail:
 ## Full Gate
 
 Use `npm run build:dev` when the change touches more than one major system, or when a narrower package would not prove the shipped behavior.
+
+## Macroquad Rust/WASM Package
+
+Use when a target project adds or changes Macroquad gameplay, rendering, input,
+assets, web packaging, or Rust/WASM delivery.
+
+Minimum:
+
+- `cargo fmt --all -- --check`
+- `cargo clippy --all-targets --all-features -- -D warnings`
+- `cargo test --all-targets --all-features`
+- `refenrece/skills/macroquad-rust-wasm/scripts/validate.sh <project-path>`
+
+Ship gate for browser targets:
+
+- assemble HTML, the release `.wasm`, a version-compatible locally hosted
+  `mq_js_bundle.js`, and assets
+- serve the bundle over HTTP
+- verify console/network state, input, resize/orientation, focus, audio startup,
+  asset loading, and release frame pacing in a browser
+
+If fail:
+
+- separate native Rust failures from WASM linker and browser runtime failures
+- on Rust 1.96+ with Macroquad 0.4.15, confirm the documented
+  `--allow-undefined` linker compatibility flag is present before broader fixes

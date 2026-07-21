@@ -278,4 +278,4 @@ func _process_input(input: Dictionary) -> void:
 *Update Date: 2026-03-10*
 *Teams: Programming Team, Security Team*
 *Integration: Production Team, DevOps Team, Support Team*
-*Engines: Unity, Godot, Unreal, Cocos Creator*
+*Engines: Unity, Godot, Unreal, Cocos Creator, Macroquad*

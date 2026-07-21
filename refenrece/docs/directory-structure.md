@@ -7,7 +7,7 @@ Claude-Code-Game-Studios-main/
 ├── .claude/                           # Core configuration and agents
 │   ├── agents/                        # Agent definitions (79 agents organized by team)
 │   │   ├── leadership/                # Leadership team (7 agents)
-│   │   ├── programming/               # Programming team (28 agents)
+│   │   ├── programming/               # Programming team (29 agents)
 │   │   ├── design/                    # Design team (12 agents)
 │   │   ├── art/                       # Art team (10 agents)
 │   │   ├── qa/                        # Quality assurance team (6 agents)
@@ -280,7 +280,7 @@ Claude-Code-Game-Studios-main/
 ### **Agent Statistics**
 - **Total Agents**: 79 agents
 - **Leadership Team**: 7 agents
-- **Programming Team**: 28 agents
+- **Programming Team**: 29 agents
 - **Design Team**: 12 agents
 - **Art Team**: 10 agents
 - **Quality Assurance Team**: 6 agents

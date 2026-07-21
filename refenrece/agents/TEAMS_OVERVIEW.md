@@ -2,7 +2,7 @@
 
 ## 📊 组织统计
 
-- **总文件数**: 85 个agents
+- **总文件数**: 86 个agents
 - **总团队数**: 9 个团队
 - **组织时间**: 2026-03-10T07:00:00.000Z
 
@@ -15,7 +15,7 @@
 
 ### 开发团队 (programming)
 - **描述**: 编程开发和技术实现
-- **成员数**: 28 个
+- **成员数**: 29 个
 - **主要文件**: `lead-programmer.md`, `gameplay-programmer.md`, `engine-programmer.md` 等
 
 ### 策划团队 (design)

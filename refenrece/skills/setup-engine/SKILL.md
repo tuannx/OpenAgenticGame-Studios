@@ -1,6 +1,6 @@
 ---
 name: setup-engine
-description: "Configure the project's game engine and version. Pins the engine in CLAUDE.md, detects knowledge gaps, and populates engine reference docs via WebSearch when the version is beyond the LLM's training data."
+description: "Configure the project's game engine/framework and version. Pins the stack in AGENTS.md, detects knowledge gaps, and populates version-aware engine reference docs from official sources. Supports Godot, Unity, Unreal, Cocos Creator, and Macroquad with Rust/WebAssembly."
 argument-hint: "[engine version] or no args for guided selection"
 user-invocable: true
 allowed-tools: Read, Glob, Grep, Write, Edit, WebSearch, WebFetch, Task
@@ -15,6 +15,9 @@ Three modes:
 - **Full spec**: `/setup-engine godot 4.6` — engine and version provided
 - **Engine only**: `/setup-engine unity` — engine provided, version will be looked up
 - **No args**: `/setup-engine` — fully guided mode (engine recommendation + version)
+
+Normalize `macroquad`, `macroquad-wasm`, and `rust-wasm` to the canonical
+`macroquad` engine key.
 
 ---
 
@@ -34,24 +37,24 @@ If no engine is specified, run an interactive engine selection process:
 1. **What kind of game?** (2D, 3D, or both?)
 2. **What platforms?** (PC, mobile, console, web?)
 3. **Team size and experience?** (solo beginner, solo experienced, small team?)
-4. **Any strong language preferences?** (GDScript, C#, C++, visual scripting?)
+4. **Any strong language preferences?** (GDScript, C#, C++, Rust, visual scripting?)
 5. **Budget for engine licensing?** (free only, or commercial licenses OK?)
 
 ### Produce a recommendation
 
 Use this decision matrix:
 
-| Factor | Godot 4 | Unity | Unreal Engine 5 |
-|--------|---------|-------|-----------------|
-| **Best for** | 2D games, small 3D, solo/small teams | Mobile, mid-scope 3D, cross-platform | AAA 3D, photorealism, large teams |
-| **Language** | GDScript (+ C#, C++ via extensions) | C# | C++ / Blueprint |
-| **Cost** | Free, MIT license | Free under revenue threshold | Free under revenue threshold, 5% royalty |
-| **Learning curve** | Gentle | Moderate | Steep |
-| **2D support** | Excellent (native) | Good (but 3D-first engine) | Possible but not ideal |
-| **3D quality ceiling** | Good (improving rapidly) | Very good | Best-in-class |
-| **Web export** | Yes (native) | Yes (limited) | No |
-| **Console export** | Via third-party | Yes (with license) | Yes |
-| **Open source** | Yes | No | Source available |
+| Factor | Godot 4 | Unity | Unreal Engine 5 | Macroquad |
+|--------|---------|-------|-----------------|-----------|
+| **Best for** | 2D games, small 3D, solo/small teams | Mobile, mid-scope 3D, cross-platform | AAA 3D, photorealism, large teams | Lightweight 2D, prototypes, native + browser games |
+| **Language** | GDScript (+ C#, C++ via extensions) | C# | C++ / Blueprint | Rust |
+| **Cost** | Free, MIT license | Free under revenue threshold | Free under revenue threshold, 5% royalty | Free, open source |
+| **Learning curve** | Gentle | Moderate | Steep | Moderate; Rust ownership adds upfront cost |
+| **2D support** | Excellent (native) | Good (but 3D-first engine) | Possible but not ideal | Excellent for code-first lightweight games |
+| **3D quality ceiling** | Good (improving rapidly) | Very good | Best-in-class | Basic/lightweight, not an AAA renderer |
+| **Web export** | Yes (native) | Yes (limited) | No | Yes, `wasm32-unknown-unknown` |
+| **Console export** | Via third-party | Yes (with license) | Yes | No first-class official console pipeline |
+| **Open source** | Yes | No | Source available | Yes |
 
 Present the top 1-2 recommendations with reasoning tied to the user's answers.
 Let the user choose — never force a recommendation.
@@ -69,10 +72,10 @@ Once the engine is chosen:
 
 ---
 
-## 4. Update CLAUDE.md Technology Stack
+## 4. Update AGENTS.md Technology Stack
 
-Read `CLAUDE.md` and update the Technology Stack section. Replace the
-`[CHOOSE]` placeholders with the actual values:
+Read `AGENTS.md` and update or create the project Technology Stack section.
+Replace any `[CHOOSE]` placeholders with the actual values:
 
 **For Godot:**
 ```markdown
@@ -98,11 +101,20 @@ Read `CLAUDE.md` and update the Technology Stack section. Replace the
 - **Asset Pipeline**: Unreal Content Pipeline
 ```
 
+**For Macroquad:**
+```markdown
+- **Engine/Framework**: Macroquad [version]
+- **Language**: Stable Rust
+- **Build System**: Cargo; `wasm32-unknown-unknown` for browser releases
+- **Asset Pipeline**: Relative runtime assets + reproducible static web bundle
+- **Web Runtime**: Macroquad/miniquad loader (`mq_js_bundle.js`)
+```
+
 ---
 
 ## 5. Populate Technical Preferences
 
-After updating CLAUDE.md, create or update `.claude/docs/technical-preferences.md` with
+After updating `AGENTS.md`, create or update `docs/technical-preferences.md` with
 engine-appropriate defaults. Read the existing template first, then fill in:
 
 ### Engine & Language Section
@@ -133,10 +145,20 @@ engine-appropriate defaults. Read the existing template first, then fill in:
 - Booleans: `b` prefix (e.g., `bIsAlive`)
 - Files: Match class without prefix (e.g., `PlayerController.h`)
 
+**For Macroquad (Rust):**
+- Types and traits: PascalCase (e.g., `PlayerController`, `RendererPort`)
+- Functions, variables, and modules: snake_case (e.g., `update_player`)
+- Constants and statics: UPPER_SNAKE_CASE (e.g., `MAX_FRAME_DELTA`)
+- Files: snake_case matching module names (e.g., `player_controller.rs`)
+- Keep game rules in plain Rust modules; keep Macroquad calls in platform or
+  presentation adapters where practical
+- Use action-level input snapshots and delta time or an explicit fixed timestep
+
 ### Remaining Sections
 - Performance Budgets: Leave as `[TO BE CONFIGURED]` with a suggestion:
   > "Typical targets: 60fps / 16.6ms frame budget. Want to set these now?"
-- Testing: Suggest engine-appropriate framework (GUT for Godot, NUnit for Unity, etc.)
+- Testing: Suggest engine-appropriate frameworks (`cargo test` for Macroquad,
+  GUT/GdUnit4 for Godot, NUnit for Unity, etc.)
 - Forbidden Patterns / Allowed Libraries: Leave as placeholder
 
 ### Collaborative Step
@@ -157,6 +179,8 @@ Check whether the engine version is likely beyond the LLM's training data.
 - Godot: training data likely covers up to ~4.3
 - Unity: training data likely covers up to ~2023.x / early 6000.x
 - Unreal: training data likely covers up to ~5.3 / early 5.4
+- Macroquad: `0.4.15` was verified from official sources on 2026-07-20;
+  always re-check docs.rs before claiming a current release
 
 Compare the user's chosen version against these baselines:
 
@@ -229,15 +253,15 @@ Create the full reference doc set by searching the web:
 
 ---
 
-## 8. Update CLAUDE.md Import
+## 8. Update AGENTS.md Import
 
-Update the `@` import under "Engine Version Reference" to point to the
-correct engine:
+Update the engine reference pointer under "Engine Version Reference" to point
+to the correct engine. Use a normal Markdown link for the Codex-native path:
 
 ```markdown
 ## Engine Version Reference
 
-@docs/engine-reference/<engine>/VERSION.md
+[Engine version reference](docs/engine-reference/<engine>/VERSION.md)
 ```
 
 If the previous import pointed to a different engine (e.g., switching from
@@ -250,6 +274,9 @@ Godot to Unity), update it.
 For the chosen engine's specialist agents, verify they have a
 "Version Awareness" section. If not, add one following the pattern in
 the existing Godot specialist agents.
+
+For Macroquad, use `refenrece/agents/programming/macroquad-specialist.md` and
+`refenrece/skills/macroquad-rust-wasm/SKILL.md`.
 
 The section should instruct the agent to:
 1. Read `docs/engine-reference/<engine>/VERSION.md`
@@ -285,7 +312,7 @@ Engine Setup Complete
 Engine:          [name] [version]
 Knowledge Risk:  [LOW/MEDIUM/HIGH]
 Reference Docs:  [created/skipped]
-CLAUDE.md:       [updated]
+AGENTS.md:       [updated]
 Tech Prefs:      [created/updated]
 Agent Config:    [verified]
 
@@ -304,5 +331,5 @@ Next Steps:
 - NEVER guess an engine version — always verify via WebSearch or user confirmation
 - NEVER overwrite existing reference docs without asking — append or update
 - If reference docs already exist for a different engine, ask before replacing
-- Always show the user what you're about to change before making CLAUDE.md edits
+- Always show the user what you're about to change before making AGENTS.md edits
 - If WebSearch returns ambiguous results, show the user and let them decide

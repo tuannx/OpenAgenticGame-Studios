@@ -33,13 +33,14 @@
 - **narrative-director** - Story & narrative vision
 - **game-vision-architect** - Long-term vision and strategy
 
-### **Programming Team** (28 agents)
+### **Programming Team** (29 agents)
 - **lead-programmer** - Technical leadership and code standards
 - **Core Programmers**: gameplay-programmer, engine-programmer, ai-programmer, network-programmer, ui-programmer, tools-programmer
 - **Unity Specialists**: unity-specialist, unity-dots-specialist, unity-addressables-specialist, unity-shader-specialist, unity-ui-specialist, unity-development-specialist, unity-skills-automation, unity-asset-guidelines-specialist
 - **Godot Specialists**: godot-specialist, godot-gdscript-specialist, godot-gdextension-specialist, godot-shader-specialist, godot-full-stack-specialist
 - **Unreal Specialists**: unreal-specialist, ue-blueprint-specialist, ue-gas-specialist, ue-replication-specialist, ue-umg-specialist
 - **Cocos Specialists**: cocos-creator-specialist, cocos-skills-automation
+- **Macroquad Specialist**: macroquad-specialist (Rust, native, WebAssembly)
 - **Skill Specialists**: skill-creation-specialist
 
 ### **Design Team** (12 agents)
