@@ -17,6 +17,7 @@ runtime.update(delta_seconds, MotionInputFrame {
     local_poses: [camera_pose, None],
     fallback_actions: [keyboard_mask, 0],
     remote_actions: [remote_p1, remote_p2],
+    evaluation_enabled: [true, false, true, true],
     custom_target: None,
 });
 
@@ -29,6 +30,12 @@ This API has no Macroquad, TensorFlow.js, DOM, or Cloudflare dependency. Motion
 Reactor in `brainbreak-game` is the first application adapter: it projects live
 skeletons into spatial target zones and turns recognized actions into score,
 shockwave, and particle feedback.
+
+The shipped game is camera-first. Continuing without camera is a deliberately
+small guide-only option: cues remain visible, while scoring, combo, hit/miss
+evaluation, and outbound multiplayer actions stay disabled for untracked local
+players. Keyboard and gamepad preview instructions but cannot earn evaluated
+scores without camera tracking.
 
 ## Local development
 
@@ -43,7 +50,7 @@ Run the Cloudflare signaling API in another terminal when testing rooms:
 npm run dev:worker
 ```
 
-Open the HTTPS/localhost URL, press **Start camera**, and use `1`, `2`, or `3`
+Open the HTTPS/localhost URL, press **Enable camera & play**, and use `1`, `2`, or `3`
 to select Mirror Beat, Beat Strike, or Duo Groove. Keyboard fallback uses
 arrows/WASD, Q/E, Space, and C. Standard gamepads map the left stick/D-pad to
 movement, face buttons to jump/squat/clap, and shoulder buttons to raised hands.

@@ -17,12 +17,13 @@ unsafe extern "C" {
     fn bb_network_status() -> u32;
     fn bb_custom_target(beat_index: u32) -> u32;
     fn bb_take_gamepad_actions(player: u32) -> u32;
+    fn bb_evaluation_enabled(player: u32) -> u32;
 }
 
 #[cfg(target_arch = "wasm32")]
 #[unsafe(no_mangle)]
 pub extern "C" fn brainbreak_bridge_crate_version() -> u32 {
-    1
+    2
 }
 
 fn window_conf() -> Conf {
@@ -156,6 +157,13 @@ fn custom_target(_beat_index: u32) -> Option<u32> {
     None
 }
 
+fn evaluation_enabled(_player: u32) -> bool {
+    #[cfg(target_arch = "wasm32")]
+    return unsafe { bb_evaluation_enabled(_player) != 0 };
+    #[cfg(not(target_arch = "wasm32"))]
+    false
+}
+
 fn mode_color(mode: GameMode) -> Color {
     match mode {
         GameMode::MirrorBeat => Color::from_rgba(131, 92, 246, 255),
@@ -183,6 +191,7 @@ async fn main() {
 
         let poses = browser_poses();
         let player_count = poses.len().max(1);
+        let local_evaluation = [evaluation_enabled(0), evaluation_enabled(1)];
         #[cfg(target_arch = "wasm32")]
         let (fallback_actions, remote_actions) = unsafe {
             let mut fallback = [keyboard_actions(), 0];
@@ -202,12 +211,13 @@ async fn main() {
                 local_poses: [poses.first().copied(), poses.get(1).copied()],
                 fallback_actions,
                 remote_actions,
+                evaluation_enabled: [local_evaluation[0], local_evaluation[1], true, true],
                 custom_target: custom_target(runtime.game.beat_index),
             },
         );
         #[cfg(target_arch = "wasm32")]
         unsafe {
-            for (player, mask) in runtime.local_triggered().into_iter().enumerate() {
+            for (player, mask) in runtime.local_evaluated_triggered().into_iter().enumerate() {
                 if mask != 0 {
                     bb_send_local_action(player as u32, mask);
                 }
@@ -235,11 +245,18 @@ async fn main() {
         let margin = (width * 0.045).max(24.0);
         draw_text("BRAINBREAK", margin, 48.0, 30.0, WHITE);
         draw_text("MOTION REACTOR", margin, 76.0, 18.0, accent);
-        let status = match network_status() {
-            3 => "HOST ONLINE",
-            2 => "P2P CONNECTED",
-            1 => "CONNECTING",
-            _ => "LOCAL PARTY",
+        let local_scoring = runtime.players[..2]
+            .iter()
+            .any(|player| player.evaluation_enabled);
+        let status = if !local_scoring {
+            "GUIDANCE ONLY"
+        } else {
+            match network_status() {
+                3 => "HOST ONLINE",
+                2 => "P2P CONNECTED",
+                1 => "CONNECTING",
+                _ => "LOCAL PARTY",
+            }
         };
         let status_width = measure_text(status, None, 18, 1.0).width;
         draw_text(
@@ -264,6 +281,24 @@ async fn main() {
         };
         let stage = Rect::new(stage_x, stage_y, stage_w, stage_h);
         motion_stage.draw(&runtime, stage, accent);
+        if !local_scoring {
+            let warning = "CAMERA TRACKING REQUIRED FOR SCORING & EVALUATION";
+            let warning_size = measure_text(warning, None, 14, 1.0);
+            draw_rectangle(
+                stage.x + (stage.w - warning_size.width) * 0.5 - 12.0,
+                stage.y + 22.0,
+                warning_size.width + 24.0,
+                28.0,
+                Color::from_rgba(69, 26, 3, 225),
+            );
+            draw_text(
+                warning,
+                stage.x + (stage.w - warning_size.width) * 0.5,
+                stage.y + 42.0,
+                14.0,
+                Color::from_rgba(253, 230, 138, 255),
+            );
+        }
         draw_rectangle(
             stage.x + 18.0,
             stage.y + 10.0,
@@ -311,20 +346,30 @@ async fn main() {
                 15.0,
                 Color::from_rgba(148, 163, 184, 255),
             );
-            draw_text(
-                runtime.game.scores[player].to_string(),
-                x + 16.0,
-                card_y + 57.0,
-                28.0,
-                WHITE,
-            );
-            draw_text(
-                format!("x{}", runtime.game.combos[player]),
-                x + card_w - 54.0,
-                card_y + 55.0,
-                16.0,
-                accent,
-            );
+            if runtime.players[player].evaluation_enabled {
+                draw_text(
+                    runtime.game.scores[player].to_string(),
+                    x + 16.0,
+                    card_y + 57.0,
+                    28.0,
+                    WHITE,
+                );
+                draw_text(
+                    format!("x{}", runtime.game.combos[player]),
+                    x + card_w - 54.0,
+                    card_y + 55.0,
+                    16.0,
+                    accent,
+                );
+            } else {
+                draw_text(
+                    "NO SCORE",
+                    x + 16.0,
+                    card_y + 55.0,
+                    16.0,
+                    Color::from_rgba(251, 191, 36, 255),
+                );
+            }
         }
 
         if height >= 650.0 {

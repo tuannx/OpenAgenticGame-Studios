@@ -30,6 +30,20 @@
         <a href="/studio.html">Open Studio</a>
         <strong id="room-status">Local party</strong>
       </section>
+      <div id="guide-warning" role="status" hidden>
+        GUIDANCE ONLY • NO SCORING OR MOTION EVALUATION
+      </div>
+      <section id="motion-gate" role="dialog" aria-modal="true" aria-labelledby="motion-gate-title">
+        <div class="motion-gate-card">
+          <span class="gate-kicker">CAMERA REQUIRED</span>
+          <h1 id="motion-gate-title">Your body is the controller</h1>
+          <p>Motion Reactor scores only movement detected from your camera. Video and landmarks stay on this device.</p>
+          <button id="primary-camera-button" type="button">Enable camera &amp; play</button>
+          <small id="gate-error" role="alert"></small>
+          <button id="guide-only-button" type="button">Continue with guidance only</button>
+          <small class="guide-note">No camera means no score, combo, hit/miss evaluation, or multiplayer actions.</small>
+        </div>
+      </section>
       <section id="boot-screen">
         <div class="spinner"></div>
         <h1>BrainBreak</h1>

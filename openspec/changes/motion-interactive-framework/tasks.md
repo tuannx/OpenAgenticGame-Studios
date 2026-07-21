@@ -17,3 +17,9 @@
 - [x] Run native, TypeScript, release WASM, and HTTP/protocol validation.
 - [x] Deploy and verify Cloudflare production.
 - [x] Push the updated feature branch and record residual risks.
+
+## M4 - Camera-first evaluation
+
+- [x] Make camera play the primary onboarding path.
+- [x] Keep the guide-only choice visually secondary with a persistent warning.
+- [x] Disable score, evaluation feedback, and outbound actions without tracked camera input.

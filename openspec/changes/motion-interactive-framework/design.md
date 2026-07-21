@@ -26,3 +26,11 @@ without changing recognition and scoring.
 - At most two local poses and four action players.
 - Visual particles use a fixed-capacity pool.
 - Frame delta remains clamped to 50 ms.
+
+## Camera-first evaluation gate
+
+The web adapter marks evaluation per player only while the camera is running
+and that player has a sufficiently confident pose. `MotionRuntime` continues
+the cue timeline for guide-only users but masks their actions before scoring,
+hit/miss feedback, and P2P emission. This is an application policy expressed
+through the framework input contract, not a renderer-only warning.

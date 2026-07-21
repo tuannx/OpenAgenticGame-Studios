@@ -1,6 +1,6 @@
 import JSZip from 'jszip';
 import { proceduralBeat } from './audio';
-import { registerBrainBreakPlugin, setCustomTargets, updatePoseBridge } from './bridge';
+import { registerBrainBreakPlugin, setCameraEvaluation, setCustomTargets, updatePoseBridge } from './bridge';
 import { roomTransport } from './network';
 import './style.css';
 
@@ -12,6 +12,11 @@ const cameraStatus = document.querySelector<HTMLElement>('#camera-status')!;
 const roomStatus = document.querySelector<HTMLElement>('#room-status')!;
 const roomCode = document.querySelector<HTMLInputElement>('#room-code')!;
 const cameraButton = document.querySelector<HTMLButtonElement>('#camera-button')!;
+const motionGate = document.querySelector<HTMLElement>('#motion-gate')!;
+const primaryCameraButton = document.querySelector<HTMLButtonElement>('#primary-camera-button')!;
+const guideOnlyButton = document.querySelector<HTMLButtonElement>('#guide-only-button')!;
+const guideWarning = document.querySelector<HTMLElement>('#guide-warning')!;
+const gateError = document.querySelector<HTMLElement>('#gate-error')!;
 let cameraRunning = false;
 
 roomTransport.onStatus = (status) => { roomStatus.textContent = status; };
@@ -20,31 +25,62 @@ async function unlockAudio(): Promise<void> {
   await proceduralBeat.start();
 }
 
-cameraButton.addEventListener('click', async () => {
-  if (cameraRunning) {
-    const { stopVision } = await import('./vision');
-    stopVision();
-    updatePoseBridge([]);
-    video.srcObject = null;
-    overlay.getContext('2d')?.clearRect(0, 0, overlay.width, overlay.height);
-    cameraRunning = false;
-    cameraButton.textContent = 'Enable motion';
-    cameraStatus.textContent = 'Camera off • local only';
-    return;
-  }
+function setGuideOnly(enabled: boolean): void {
+  document.body.classList.toggle('guide-only', enabled);
+  guideWarning.hidden = !enabled;
+  setCameraEvaluation(!enabled && cameraRunning);
+}
+
+async function stopCamera(): Promise<void> {
+  const { stopVision } = await import('./vision');
+  stopVision();
+  updatePoseBridge([]);
+  setCameraEvaluation(false);
+  video.srcObject = null;
+  overlay.getContext('2d')?.clearRect(0, 0, overlay.width, overlay.height);
+  cameraRunning = false;
+  cameraButton.textContent = 'Enable motion';
+  cameraStatus.textContent = 'Camera off • local only';
+}
+
+async function enableCamera(): Promise<void> {
+  primaryCameraButton.disabled = true;
+  primaryCameraButton.textContent = 'Starting camera…';
+  gateError.textContent = '';
   try {
     await unlockAudio();
     const { startVision } = await import('./vision');
     await startVision(video, overlay, updatePoseBridge, (status) => { cameraStatus.textContent = status; });
     cameraRunning = true;
+    setCameraEvaluation(true);
+    setGuideOnly(false);
+    motionGate.classList.add('hidden');
     cameraButton.textContent = 'Stop camera';
   } catch (error) {
-    const { stopVision } = await import('./vision');
-    stopVision();
-    video.srcObject = null;
-    cameraRunning = false;
-    cameraStatus.textContent = error instanceof Error ? error.message : 'Camera failed';
+    await stopCamera();
+    const message = error instanceof Error ? error.message : 'Camera failed';
+    cameraStatus.textContent = message;
+    gateError.textContent = message;
+  } finally {
+    primaryCameraButton.disabled = false;
+    primaryCameraButton.textContent = 'Enable camera & play';
   }
+}
+
+cameraButton.addEventListener('click', async () => {
+  if (cameraRunning) {
+    await stopCamera();
+    setGuideOnly(true);
+    motionGate.classList.remove('hidden');
+  } else {
+    await enableCamera();
+  }
+});
+
+primaryCameraButton.addEventListener('click', () => void enableCamera());
+guideOnlyButton.addEventListener('click', () => {
+  motionGate.classList.add('hidden');
+  setGuideOnly(true);
 });
 
 document.querySelector('#create-room')!.addEventListener('click', async () => {
@@ -96,5 +132,6 @@ document.querySelector<HTMLInputElement>('#pack-input')!.addEventListener('chang
 });
 
 registerBrainBreakPlugin();
+setCameraEvaluation(false);
 window.load(__BRAINBREAK_WASM_PATH__);
 window.setTimeout(() => document.querySelector('#boot-screen')?.classList.add('hidden'), 900);

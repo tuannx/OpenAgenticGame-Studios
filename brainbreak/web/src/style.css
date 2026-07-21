@@ -6,6 +6,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body, #game-shell { width: 100%; height: 100%; margin: 0; overflow: hidden; }
 body { background: radial-gradient(circle at 15% 15%, #27205f 0, #080c1c 38%); }
 button, input, a { font: inherit; }
@@ -41,6 +42,21 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 3px solid 
 .pack-button { text-align: center; }
 .pack-button input { display: none; }
 #room-status { color: #94a3b8; font-size: 12px; text-align: center; }
+#motion-gate { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 20px; background: radial-gradient(circle at 50% 35%, rgba(76,29,149,.42), rgba(3,7,18,.94) 58%); }
+#motion-gate.hidden { display: none; }
+.motion-gate-card { width: min(520px, 100%); padding: clamp(28px, 5vw, 48px); border: 1px solid rgba(196,181,253,.35); border-radius: 28px; text-align: center; background: rgba(8,12,28,.96); box-shadow: 0 30px 90px rgba(0,0,0,.55); }
+.motion-gate-card h1 { margin: 10px 0 12px; font-size: clamp(30px, 6vw, 48px); line-height: 1.02; }
+.motion-gate-card p { margin: 0 auto 24px; max-width: 420px; color: #cbd5e1; line-height: 1.55; }
+.gate-kicker { color: #67e8f9; font-size: 12px; font-weight: 800; letter-spacing: .18em; }
+#primary-camera-button { display: block; width: 100%; border: 0; border-radius: 16px; padding: 16px 22px; color: #07111f; background: linear-gradient(135deg, #67e8f9, #a78bfa); font-size: 18px; font-weight: 850; box-shadow: 0 12px 34px rgba(103,232,249,.22); }
+#primary-camera-button:disabled { cursor: wait; opacity: .65; }
+#guide-only-button { margin-top: 14px; padding: 3px 7px; border: 0; color: #64748b; background: transparent; font-size: 10px; text-decoration: underline; opacity: .72; }
+#guide-only-button:hover { color: #cbd5e1; transform: none; }
+.guide-note { display: block; margin-top: 5px; color: #64748b; font-size: 10px; }
+#gate-error { display: block; min-height: 18px; margin-top: 8px; color: #fda4af; }
+#guide-warning { position: fixed; z-index: 8; top: max(12px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); width: max-content; max-width: calc(100% - 32px); border: 1px solid rgba(251,191,36,.5); border-radius: 999px; padding: 7px 13px; color: #fde68a; background: rgba(69,26,3,.92); font-size: 11px; font-weight: 800; letter-spacing: .04em; text-align: center; }
+body.guide-only #camera-card { width: 108px; opacity: .65; }
+body.guide-only #camera-button { border-color: #f59e0b; color: #fde68a; }
 #boot-screen { position: fixed; inset: 0; display: grid; place-content: center; text-align: center; background: #080c1c; z-index: 10; transition: opacity .4s ease; }
 #boot-screen.hidden { opacity: 0; pointer-events: none; }
 .spinner { width: 48px; height: 48px; margin: 0 auto; border: 4px solid #334155; border-top-color: #a78bfa; border-radius: 50%; animation: spin .8s linear infinite; }

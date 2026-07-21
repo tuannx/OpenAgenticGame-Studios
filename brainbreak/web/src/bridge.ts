@@ -5,6 +5,7 @@ const KEYPOINTS = 17;
 const BUFFER_SIZE = 16 + 2 * (8 + KEYPOINTS * 12);
 let latestPoses: PoseSnapshot[] = [];
 let customTargets: number[] = [];
+let cameraEvaluationEnabled = false;
 const previousGamepadMasks = [0, 0];
 
 const ACTION = {
@@ -27,6 +28,11 @@ declare global {
 
 export function updatePoseBridge(poses: PoseSnapshot[]): void {
   latestPoses = poses.slice(0, 2);
+}
+
+export function setCameraEvaluation(enabled: boolean): void {
+  cameraEvaluationEnabled = enabled;
+  if (!enabled) latestPoses = [];
 }
 
 export function setCustomTargets(targets: number[]): void {
@@ -79,7 +85,7 @@ function takeGamepadActions(player: number): number {
 export function registerBrainBreakPlugin(): void {
   window.miniquad_add_plugin({
     name: 'brainbreak_bridge',
-    version: 1,
+    version: 2,
     register_plugin(importObject: WebAssembly.Imports) {
       const env = importObject.env as Record<string, (...args: number[]) => number | void>;
       env.bb_copy_pose = copyPose;
@@ -88,6 +94,7 @@ export function registerBrainBreakPlugin(): void {
       env.bb_network_status = () => roomTransport.statusCode;
       env.bb_custom_target = (beatIndex: number) => customTargets.length === 0 ? 0 : customTargets[beatIndex % customTargets.length] ?? 0;
       env.bb_take_gamepad_actions = takeGamepadActions;
+      env.bb_evaluation_enabled = (player: number) => cameraEvaluationEnabled && (latestPoses[player]?.quality ?? 0) >= 0.25 ? 1 : 0;
     },
   });
 }

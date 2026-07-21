@@ -225,6 +225,7 @@ impl PoseRecognizer {
 pub struct PlayerMotionState {
     pub pose: Option<PoseFrame>,
     pub calibration: f32,
+    pub evaluation_enabled: bool,
     pub active: u32,
     pub triggered: u32,
     pub hit: bool,
@@ -237,12 +238,25 @@ impl PlayerMotionState {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug)]
 pub struct MotionInputFrame {
     pub local_poses: [Option<PoseFrame>; 2],
     pub fallback_actions: [u32; 2],
     pub remote_actions: [u32; 2],
+    pub evaluation_enabled: [bool; PLAYER_CAPACITY],
     pub custom_target: Option<u32>,
+}
+
+impl Default for MotionInputFrame {
+    fn default() -> Self {
+        Self {
+            local_poses: [None; 2],
+            fallback_actions: [0; 2],
+            remote_actions: [0; 2],
+            evaluation_enabled: [true; PLAYER_CAPACITY],
+            custom_target: None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -456,6 +470,7 @@ impl MotionRuntime {
                 self.recognizers[player].lose_tracking();
             }
             self.players[player].pose = input.local_poses[player];
+            self.players[player].evaluation_enabled = input.evaluation_enabled[player];
             let detected = input.local_poses[player]
                 .map(|pose| self.recognizers[player].update(&pose))
                 .unwrap_or_default();
@@ -470,15 +485,23 @@ impl MotionRuntime {
         for player in 0..2 {
             let index = player + 2;
             self.players[index].pose = None;
+            self.players[index].evaluation_enabled = input.evaluation_enabled[index];
             self.players[index].active = input.remote_actions[player];
             self.players[index].triggered = input.remote_actions[player];
         }
 
         let scores_before = self.game.scores;
-        let triggered = self.players.map(|player| player.triggered);
-        self.game.update(dt, triggered, input.custom_target);
+        let evaluated_triggered = self.players.map(|player| {
+            if player.evaluation_enabled {
+                player.triggered
+            } else {
+                0
+            }
+        });
+        self.game
+            .update(dt, evaluated_triggered, input.custom_target);
         for (index, player) in self.players.iter_mut().enumerate() {
-            let attempted = player.triggered != 0;
+            let attempted = evaluated_triggered[index] != 0;
             player.hit = attempted && self.game.scores[index] > scores_before[index];
             player.miss = attempted && !player.hit;
         }
@@ -486,6 +509,16 @@ impl MotionRuntime {
 
     pub fn local_triggered(&self) -> [u32; 2] {
         [self.players[0].triggered, self.players[1].triggered]
+    }
+
+    pub fn local_evaluated_triggered(&self) -> [u32; 2] {
+        [0, 1].map(|player| {
+            if self.players[player].evaluation_enabled {
+                self.players[player].triggered
+            } else {
+                0
+            }
+        })
     }
 }
 
@@ -629,6 +662,23 @@ mod tests {
         );
         assert!(runtime.players[0].miss);
         assert!(!runtime.players[0].hit);
+    }
+
+    #[test]
+    fn guide_only_input_never_scores_or_emits_feedback() {
+        let mut runtime = MotionRuntime::default();
+        runtime.update(
+            0.01,
+            MotionInputFrame {
+                fallback_actions: [Action::LeftUp.mask(), 0],
+                evaluation_enabled: [false; PLAYER_CAPACITY],
+                ..MotionInputFrame::default()
+            },
+        );
+        assert_eq!(runtime.game.scores, [0; PLAYER_CAPACITY]);
+        assert_eq!(runtime.local_evaluated_triggered(), [0, 0]);
+        assert!(!runtime.players[0].hit);
+        assert!(!runtime.players[0].miss);
     }
 
     #[test]
