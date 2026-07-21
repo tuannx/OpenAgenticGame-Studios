@@ -3,7 +3,7 @@
 > **How to go from zero to a shipped game using the Agent Architecture.**
 >
 > This guide walks you through every phase of game development using the
-> 86-agent system, 73 reference skills, and Codex workflow gates. It assumes you
+> 87-agent system, 74 reference skills, and Codex workflow gates. It assumes you
 > have OpenAI Codex installed and are working from the project root.
 
 ---
@@ -91,6 +91,12 @@ but won't be primary.
 For Macroquad projects, `macroquad-specialist` and `/macroquad-rust-wasm`
 provide the Rust architecture, native validation, WASM build, browser UX, and
 static delivery path.
+
+For camera-controlled BrainBreak games, additionally load
+`brainbreak-motion-game-specialist` and `/brainbreak-motion-games`. They preserve
+the camera-first scoring boundary, JavaScript/Rust ABI versioning, local-only
+pose data, audio licensing, P2P action transport, and production cache and
+content-type checks across the complete motion-game stack.
 
 > **Manual alternative:** You can also edit the Technology Stack section in
 > `AGENTS.md` directly if you prefer.

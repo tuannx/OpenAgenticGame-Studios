@@ -1,5 +1,5 @@
 {
-  "totalSkills": 73,
+  "totalSkills": 74,
   "skills": [
     {
       "name": "aesthetic-direction-framework",
@@ -19,6 +19,11 @@
     {
       "name": "balance-check",
       "path": "refenrece/skills/balance-check",
+      "hasSkillMd": true
+    },
+    {
+      "name": "brainbreak-motion-games",
+      "path": "refenrece/skills/brainbreak-motion-games",
       "hasSkillMd": true
     },
     {

@@ -40,6 +40,23 @@ Validate native Rust behavior and the release `wasm32-unknown-unknown` artifact
 separately. Browser-facing changes also require an HTTP-served smoke test; a
 successful Cargo build alone is not browser-runtime proof.
 
+## BrainBreak Motion Games
+
+For changes under `brainbreak/` or camera-controlled motion gameplay, also load:
+
+- Specialist: `refenrece/agents/programming/brainbreak-motion-game-specialist.md`
+- Skill: `refenrece/skills/brainbreak-motion-games/SKILL.md`
+- Architecture contract: `refenrece/skills/brainbreak-motion-games/references/architecture-contract.md`
+
+Keep scoring and judgment camera-backed inside the deterministic runtime; a DOM
+warning or hidden control is not an evaluation boundary. When browser imports
+change, bump both the JavaScript bridge plugin version and the Rust
+`brainbreak_bridge_crate_version()` value. Camera/audio changes require a real
+browser interaction test, and P2P changes require two peers. If those surfaces
+are unavailable, report the exact gap instead of inferring success from builds.
+For production delivery, verify response content types before immutable caching
+so a SPA HTML fallback can never poison JavaScript, WASM, or audio asset caches.
+
 ## Replacement policy
 
 - Do not add new `.claude/` configuration. The former Claude Code integration has been replaced by `AGENTS.md` and `.codex/`.

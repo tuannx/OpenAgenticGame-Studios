@@ -9,6 +9,7 @@ skills/
 ├── godot/                    # Godot-Claude-Skills-main
 ├── cocos-creator/            # cocos-creator-dev-skill-main
 ├── macroquad-rust-wasm/      # Rust + Macroquad native/WASM workflow
+├── brainbreak-motion-games/  # Camera-first BrainBreak product stack
 ├── narrative-game/           # narrative-game-skill-main
 └── unity-skills/             # OH-Unity-GameDev-Skills-main
 ```
@@ -27,6 +28,7 @@ skills/
 - ✅ narrative-game-skill-main → Narrative Game Generator
 - ✅ OH-Unity-GameDev-Skills-main → Unity Development Specialist + Animation Specialists
 - ✅ macroquad-rust-wasm → Macroquad Specialist
+- ✅ brainbreak-motion-games → BrainBreak Motion Game Specialist
 
 ## Usage
 

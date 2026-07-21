@@ -3,7 +3,7 @@
   <p align="center">
     Any AI IDE. Complete game studio. Instantly.
     <br />
-    85 agents. 72 skills. 9 teams. Universal agent coordination system.
+    87 agents. 74 skills. 9 teams. Universal agent coordination system.
   </p>
 </p>
 
@@ -11,8 +11,8 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
   <a href="LICENSE_OPENAGENTICGAME.md"><img src="https://img.shields.io/badge/enhanced%20license-MIT-green" alt="Enhanced MIT License"></a>
   <a href="COPYRIGHT.md"><img src="https://img.shields.io/badge/attribution-required-orange" alt="Attribution Required"></a>
-  <a href="refenrece/agents"><img src="https://img.shields.io/badge/agents-85-blueviolet" alt="85 Agents"></a>
-  <a href="refenrece/skills"><img src="https://img.shields.io/badge/skills-72-green" alt="72 Skills"></a>
+  <a href="refenrece/agents"><img src="https://img.shields.io/badge/agents-87-blueviolet" alt="87 Agents"></a>
+  <a href="refenrece/skills"><img src="https://img.shields.io/badge/skills-74-green" alt="74 Skills"></a>
   <a href="refenrece/rules"><img src="https://img.shields.io/badge/rules-12-red" alt="12 Rules"></a>
   <a href="docs/qualification"><img src="https://img.shields.io/badge/platforms-6-orange" alt="6 Platforms"></a>
   <a href="https://developers.openai.com/codex/"><img src="https://img.shields.io/badge/built%20for-OpenAI%20Codex-111827?logo=openai" alt="Built for OpenAI Codex"></a>
@@ -33,7 +33,7 @@ We broke free from single-AI limitations. Our **universal reference system** (`r
 **Advanced Development Layer**: We've integrated **BMAD + OpenSpec + Harness** methodologies into our `.codex/` folder, creating a sophisticated development framework that brings enterprise-grade workflow management to ANY AI IDE. This includes Quick/BMM modes, task decomposition, milestone validation, and automated quality gates — all portable across AI platforms.
 
 ### 🏗️ **Enterprise-Grade Coordination**  
-We scaled from basic agent assistance to a full studio architecture. While others offer simple chatbots, we provide **86 specialized agents** organized into **9 professional teams** with real studio hierarchies: executive leadership, department heads, specialists, and quality gates. This isn't just assistance — it's a complete production pipeline.
+We scaled from basic agent assistance to a full studio architecture. While others offer simple chatbots, we provide **87 specialized agents** organized into **9 professional teams** with real studio hierarchies: executive leadership, department heads, specialists, and quality gates. This isn't just assistance — it's a complete production pipeline.
 
 ### ⚡ **Instant Studio Transformation**
 Our reference-based approach means **zero setup time**. Any AI IDE that can read files instantly becomes a full game development studio with all agents, skills, and quality standards. No configuration, no integration headaches — instant professional-grade game development capability.
@@ -62,8 +62,8 @@ The result: you choose your preferred AI environment, we provide the complete st
 
 | Category | Count | Description |
 |----------|-------|-------------|
-| **Agents** | 86 | Specialized agents across 9 teams, including dedicated Macroquad Rust/WASM support |
-| **Skills** | 73 | Universal slash commands for common workflows (`/start`, `/sprint-plan`, `/code-review`, `/brainstorm`, `/macroquad-rust-wasm`, etc.) |
+| **Agents** | 87 | Specialized agents across 9 teams, including dedicated Macroquad and BrainBreak motion-game support |
+| **Skills** | 74 | Universal slash commands for common workflows (`/start`, `/sprint-plan`, `/code-review`, `/brainstorm`, `/macroquad-rust-wasm`, `/brainbreak-motion-games`, etc.) |
 | **Rules** | 12 | Path-scoped coding standards enforced when editing gameplay, engine, AI, UI, network code, and more |
 | **Templates** | 28 | Document templates for GDDs, ADRs, sprint plans, economy models, faction design, and more |
 | **Platforms** | 6 | Quality standards and certification for Steam, Mobile, Console, Epic Games Store, and Browser platforms |
@@ -90,8 +90,8 @@ The core innovation of OpenAgenticGame Studios is our **universal reference syst
 ### Reference Structure
 ```
 refenrece/
-├── agents/     # 86 specialized agent definitions
-├── skills/      # 73 universal skill implementations
+├── agents/     # 87 specialized agent definitions
+├── skills/      # 74 universal skill implementations
 ├── rules/       # 12 coding standards and quality rules
 └── docs/        # Comprehensive documentation
 ```
@@ -103,45 +103,46 @@ This means you're not locked into a specific AI platform — your studio structu
 Agents are organized into 9 teams, matching how real studios operate:
 
 ```
-Leadership Team (8 agents)
+Leadership Team (7 agents)
   creative-director    technical-director    producer
   art-director         audio-director         narrative-director
-  game-vision-architect  [additional leadership agents]
+  game-vision-architect
 
-Programming Team (29 agents)
+Programming Team (30 agents)
   lead-programmer      gameplay-programmer    engine-programmer
   ai-programmer        network-programmer     ui-programmer
-  tools-programmer     [24 additional programming specialists]
+  tools-programmer     brainbreak-motion-game-specialist
+  [22 additional programming specialists]
 
-Design Team (13 agents)
+Design Team (12 agents)
   game-designer        systems-designer       level-designer
   economy-designer     world-builder          writer
-  [7 additional design specialists]
+  [6 additional design specialists]
 
-Art Team (11 agents)
+Art Team (10 agents)
   technical-artist     ux-designer            accessibility-specialist
-  sound-designer        [7 additional art specialists]
+  sound-designer        [6 additional art specialists]
 
-Quality Assurance Team (7 agents)
+Quality Assurance Team (6 agents)
   qa-lead              qa-tester              performance-analyst
-  [4 additional QA specialists]
+  [3 additional QA specialists]
 
-Production Team (13 agents)
+Production Team (12 agents)
   release-manager      localization-lead      community-manager
   analytics-engineer   devops-engineer        security-engineer
-  [7 additional production specialists]
+  [6 additional production specialists]
 
-Publish Team (7 agents)
+Publish Team (6 agents)
   store-submission-specialist  platform-certification-specialist
   release-coordinator  publish-quality-gates  store-page-optimizer
   platform-relationship-manager
 
-Support Team (2 agents)
-  enhanced-analytics-engineer  enhanced-network-engineer
+Support Team (1 agent)
+  enhanced-analytics-engineer
 
-Enhanced Team (4 agents)
+Enhanced Team (3 agents)
   enhanced-game-designer  enhanced-tool-developer
-  enhanced-art-director  enhanced-network-engineer
+  enhanced-network-engineer
 ```
 
 ### Engine Specialists
@@ -154,11 +155,11 @@ The template includes agent sets for five supported engine/framework paths. Use 
 | **Unity** | `unity-specialist` | DOTS/ECS, Shaders/VFX, Addressables, UI Toolkit, Asset Guidelines |
 | **Unreal Engine 5** | `unreal-specialist` | GAS, Blueprints, Replication, UMG/CommonUI |
 | **Cocos Creator** | `cocos-creator-specialist` | Development, Automation |
-| **Macroquad** | `macroquad-specialist` | Rust, native builds, WebAssembly, responsive browser delivery |
+| **Macroquad** | `macroquad-specialist` | Rust, native builds, WebAssembly, responsive browser delivery; `brainbreak-motion-game-specialist` for camera-controlled games |
 
 ## Slash Commands
 
-Use Codex prompts or slash-style task names to invoke the 73 reference skills:
+Use Codex prompts or slash-style task names to invoke the 74 reference skills:
 
 **Reviews & Analysis**
 `/design-review` `/code-review` `/balance-check` `/asset-audit` `/scope-check` `/perf-profile` `/tech-debt`
@@ -176,7 +177,7 @@ Use Codex prompts or slash-style task names to invoke the 73 reference skills:
 `/brainstorm` `/playtest-report` `/prototype` `/onboard` `/localize`
 
 **Engine Toolchains**
-`/setup-engine macroquad` `/macroquad-rust-wasm`
+`/setup-engine macroquad` `/macroquad-rust-wasm` `/brainbreak-motion-games`
 
 **Team Orchestration** (coordinate multiple agents on a single feature)
 `/team-combat` `/team-narrative` `/team-ui` `/team-release` `/team-polish` `/team-audio` `/team-level`
@@ -216,8 +217,8 @@ Use Codex prompts or slash-style task names to invoke the 73 reference skills:
 🌟 Universal Architecture (AI-Platform Agnostic)
 │
 ├── refenrece/                          # UNIVERSAL REFERENCE SYSTEM - Core Architecture
-│   ├── agents/                        # 86 specialized agent definitions
-│   ├── skills/                        # 73 universal skill implementations
+│   ├── agents/                        # 87 specialized agent definitions
+│   ├── skills/                        # 74 universal skill implementations
 │   ├── rules/                         # 12 coding standards and quality rules
 │   └── docs/                         # Comprehensive documentation for all AI platforms
 │

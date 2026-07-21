@@ -2,7 +2,7 @@
 
 ## 📊 组织统计
 
-- **总文件数**: 86 个agents
+- **总文件数**: 87 个agents
 - **总团队数**: 9 个团队
 - **组织时间**: 2026-03-10T07:00:00.000Z
 
@@ -15,8 +15,8 @@
 
 ### 开发团队 (programming)
 - **描述**: 编程开发和技术实现
-- **成员数**: 29 个
-- **主要文件**: `lead-programmer.md`, `gameplay-programmer.md`, `engine-programmer.md` 等
+- **成员数**: 30 个
+- **主要文件**: `lead-programmer.md`, `macroquad-specialist.md`, `brainbreak-motion-game-specialist.md` 等
 
 ### 策划团队 (design)
 - **描述**: 游戏设计和内容创作
@@ -90,5 +90,5 @@ refenrece/agents/
 ---
 
 *团队组织总览*
-*生成时间: 2026-03-10T07:00:00.000Z*
-*项目: Claude Code Game Studios*
+*更新时间: 2026-07-21*
+*项目: OpenAgenticGame Studios*
