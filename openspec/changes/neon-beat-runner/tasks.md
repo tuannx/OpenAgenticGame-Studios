@@ -33,8 +33,8 @@
 
 - [x] M3.1 Run Rust, WASM, TypeScript, test, audit, and production build gates.
 - [ ] M3.2 HTTP asset smoke passed; interactive browser/camera smoke is pending because no browser instance was available.
-- [ ] M3.3 Deploy to Cloudflare and verify health plus JS/WASM/audio asset delivery.
-- [ ] M3.4 Record validation evidence, persona review, residual risks, and final status.
+- [x] M3.3 Deploy to Cloudflare and verify health plus JS/WASM/audio asset delivery.
+- [x] M3.4 Record validation evidence, persona review, residual risks, and final status.
 
 ## Closeout Rule
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-- in_progress
+- validated; interactive camera/browser smoke remains a documented device-test gap
 
 ## Harness Alignment
 

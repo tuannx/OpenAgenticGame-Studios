@@ -16,7 +16,7 @@ Date: 2026-07-21
 
 ## Bundle Evidence
 
-- Release WASM: `brainbreak-game-12115446f734.wasm` before the final release commit.
+- Production release WASM: `brainbreak-game-6cb0638eaf11.wasm`, 644,073 bytes.
 - Music: `special-spotlight-db0e06528b9a.mp3`, 3,079,985 bytes, 128 kbps, 192.444 seconds.
 - Music SHA-256: `db0e06528b9ac754e771d933e5bcf68d8408b99ee4cdb52fcc2988cb9232df61`.
 - Static distribution size: approximately 6.7 MB.
@@ -50,4 +50,12 @@ but physical/browser camera playtesting remains required.
 
 ## Production
 
-- Deployment and production probes pending.
+- URL: <https://brainbreak-motion-party.tuannx87.workers.dev>
+- Application commit: `b2d2296`.
+- Cloudflare Version ID: `7f7bb7af-dde8-4ca4-87b6-b4d01dbcc525`.
+- `/health` returned build `b2d2296`, game `neon-beat-runner`, schema version 2.
+- Root HTML referenced `game-Cz-aQbGK.js` and contained the new title, camera CTA, and visible music license.
+- Production JavaScript returned `text/javascript` and immutable caching.
+- Production WASM returned `application/wasm`, immutable caching, and matched the local release bundle byte-for-byte.
+- Production MP3 returned `audio/mpeg`, immutable caching, matched the local release bundle byte-for-byte, and retained the recorded SHA-256.
+- Public attribution text returned the author, source, license, tempo, and modification notice.
