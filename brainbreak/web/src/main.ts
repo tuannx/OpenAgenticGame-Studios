@@ -5,6 +5,7 @@ import { roomTransport } from './network';
 import './style.css';
 
 declare const __BRAINBREAK_WASM_PATH__: string;
+const CAMERA_GATE_SCHEMA = 2;
 
 const video = document.querySelector<HTMLVideoElement>('#camera-video')!;
 const overlay = document.querySelector<HTMLCanvasElement>('#pose-overlay')!;
@@ -17,6 +18,7 @@ const primaryCameraButton = document.querySelector<HTMLButtonElement>('#primary-
 const guideOnlyButton = document.querySelector<HTMLButtonElement>('#guide-only-button')!;
 const guideWarning = document.querySelector<HTMLElement>('#guide-warning')!;
 const gateError = document.querySelector<HTMLElement>('#gate-error')!;
+motionGate.dataset.schema = String(CAMERA_GATE_SCHEMA);
 let cameraRunning = false;
 
 roomTransport.onStatus = (status) => { roomStatus.textContent = status; };

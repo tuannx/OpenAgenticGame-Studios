@@ -46,11 +46,14 @@ function securityHeaders(response: Response, pathname: string): Response {
   if (pathname.endsWith('.wasm')) {
     output.headers.set('content-type', 'application/wasm');
   }
-  if (pathname.startsWith('/assets/') || /\/brainbreak-game-[a-f0-9]{12}\.wasm$/.test(pathname)) {
+  const isHtml = output.headers.get('content-type')?.startsWith('text/html') ?? false;
+  if (isHtml) {
+    output.headers.set('cache-control', 'no-cache');
+  } else if (pathname.startsWith('/assets/') || /\/brainbreak-game-[a-f0-9]{12}\.wasm$/.test(pathname)) {
     output.headers.set('cache-control', 'public, max-age=31536000, immutable');
   } else if (pathname.endsWith('.wasm') || pathname.endsWith('mq_js_bundle.js')) {
     output.headers.set('cache-control', 'no-cache');
-  } else if (pathname === '/' || pathname.endsWith('.html') || output.headers.get('content-type')?.startsWith('text/html')) {
+  } else if (pathname === '/' || pathname.endsWith('.html')) {
     output.headers.set('cache-control', 'no-cache');
   }
   return output;
