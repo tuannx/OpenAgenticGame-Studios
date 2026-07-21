@@ -1,0 +1,9 @@
+[package]
+name = "brainbreak-game"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+brainbreak-core = { path = "../brainbreak-core" }
+macroquad.workspace = true

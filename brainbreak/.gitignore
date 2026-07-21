@@ -1,0 +1,8 @@
+/target/
+/node_modules/
+/web/dist/
+/web/public/brainbreak-game.wasm
+/web/public/mq_js_bundle.js
+/web/public/tfjs-wasm/
+/.wrangler/
+*.dev.vars

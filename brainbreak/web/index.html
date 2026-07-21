@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+    <meta name="theme-color" content="#080c1c" />
+    <title>BrainBreak Motion Party</title>
+  </head>
+  <body>
+    <main id="game-shell">
+      <canvas id="glcanvas" tabindex="1" aria-label="BrainBreak game canvas"></canvas>
+      <aside id="camera-card" aria-live="polite">
+        <video id="camera-video" playsinline muted></video>
+        <canvas id="pose-overlay"></canvas>
+        <span id="camera-status">Camera off</span>
+      </aside>
+      <section id="control-panel" aria-label="Game controls">
+        <button id="camera-button" type="button">Start camera</button>
+        <button id="create-room" type="button">Create room</button>
+        <div class="join-row">
+          <input id="room-code" maxlength="8" autocomplete="off" placeholder="ROOM CODE" aria-label="Room code" />
+          <button id="join-room" type="button">Join</button>
+        </div>
+        <label class="pack-button">
+          Import pack
+          <input id="pack-input" type="file" accept=".zip,.brainbreak.zip" />
+        </label>
+        <button id="audio-button" type="button">Sound on</button>
+        <a href="/studio.html">Open Studio</a>
+        <strong id="room-status">Local party</strong>
+      </section>
+      <section id="boot-screen">
+        <div class="spinner"></div>
+        <h1>BrainBreak</h1>
+        <p>Loading the motion stage…</p>
+      </section>
+    </main>
+    <script src="/mq_js_bundle.js"></script>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
