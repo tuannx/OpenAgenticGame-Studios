@@ -4,6 +4,8 @@ import { registerBrainBreakPlugin, setCustomTargets, updatePoseBridge } from './
 import { roomTransport } from './network';
 import './style.css';
 
+declare const __BRAINBREAK_WASM_PATH__: string;
+
 const video = document.querySelector<HTMLVideoElement>('#camera-video')!;
 const overlay = document.querySelector<HTMLCanvasElement>('#pose-overlay')!;
 const cameraStatus = document.querySelector<HTMLElement>('#camera-status')!;
@@ -94,5 +96,5 @@ document.querySelector<HTMLInputElement>('#pack-input')!.addEventListener('chang
 });
 
 registerBrainBreakPlugin();
-window.load('/brainbreak-game.wasm');
+window.load(__BRAINBREAK_WASM_PATH__);
 window.setTimeout(() => document.querySelector('#boot-screen')?.classList.add('hidden'), 900);

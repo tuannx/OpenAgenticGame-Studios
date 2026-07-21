@@ -10,8 +10,11 @@ RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }-C link-arg=--allow-undefined" \
   cargo build --manifest-path "$PROJECT_DIR/Cargo.toml" \
   --release --target wasm32-unknown-unknown -p brainbreak-game
 
-cp "$PROJECT_DIR/target/wasm32-unknown-unknown/release/brainbreak-game.wasm" \
-  "$PUBLIC_DIR/brainbreak-game.wasm"
+WASM_ARTIFACT="$PROJECT_DIR/target/wasm32-unknown-unknown/release/brainbreak-game.wasm"
+WASM_HASH="$(shasum -a 256 "$WASM_ARTIFACT" | awk '{print substr($1, 1, 12)}')"
+find "$PUBLIC_DIR" -maxdepth 1 -type f \
+  \( -name 'brainbreak-game.wasm' -o -name 'brainbreak-game-*.wasm' \) -delete
+cp "$WASM_ARTIFACT" "$PUBLIC_DIR/brainbreak-game-$WASM_HASH.wasm"
 
 MACROQUAD_LOADER="$(find "$HOME/.cargo/registry/src" -path '*/macroquad-0.4.15/js/mq_js_bundle.js' -print -quit)"
 if [[ -z "$MACROQUAD_LOADER" ]]; then
