@@ -1,7 +1,10 @@
 #[cfg(target_arch = "wasm32")]
 use brainbreak_core::Keypoint;
-use brainbreak_core::{Action, GameMode, GameState, PLAYER_CAPACITY, PoseFrame, PoseRecognizer};
+use brainbreak_core::{Action, GameMode, MotionInputFrame, MotionRuntime, PoseFrame};
 use macroquad::prelude::*;
+
+mod visuals;
+use visuals::{MotionStage, draw_round_panel};
 
 #[cfg(target_arch = "wasm32")]
 const POSE_BUFFER_BYTES: usize = 512;
@@ -153,15 +156,6 @@ fn custom_target(_beat_index: u32) -> Option<u32> {
     None
 }
 
-fn draw_round_rect(x: f32, y: f32, w: f32, h: f32, color: Color) {
-    draw_rectangle(x + 16.0, y, w - 32.0, h, color);
-    draw_rectangle(x, y + 16.0, w, h - 32.0, color);
-    draw_circle(x + 16.0, y + 16.0, 16.0, color);
-    draw_circle(x + w - 16.0, y + 16.0, 16.0, color);
-    draw_circle(x + 16.0, y + h - 16.0, 16.0, color);
-    draw_circle(x + w - 16.0, y + h - 16.0, 16.0, color);
-}
-
 fn mode_color(mode: GameMode) -> Color {
     match mode {
         GameMode::MirrorBeat => Color::from_rgba(131, 92, 246, 255),
@@ -172,47 +166,58 @@ fn mode_color(mode: GameMode) -> Color {
 
 #[macroquad::main(window_conf)]
 async fn main() {
-    let mut game = GameState::default();
-    let mut recognizers = [PoseRecognizer::default(), PoseRecognizer::default()];
+    let mut runtime = MotionRuntime::default();
+    let mut motion_stage = MotionStage::default();
 
     loop {
         let dt = get_frame_time().min(0.05);
         if is_key_pressed(KeyCode::Key1) {
-            game.set_mode(GameMode::MirrorBeat);
+            runtime.set_mode(GameMode::MirrorBeat);
         } else if is_key_pressed(KeyCode::Key2) {
-            game.set_mode(GameMode::BeatStrike);
+            runtime.set_mode(GameMode::BeatStrike);
         } else if is_key_pressed(KeyCode::Key3) {
-            game.set_mode(GameMode::DuoGroove);
+            runtime.set_mode(GameMode::DuoGroove);
         } else if is_key_pressed(KeyCode::Tab) {
-            game.set_mode(game.mode.next());
+            runtime.set_mode(runtime.game.mode.next());
         }
 
-        let mut actions = [0_u32; PLAYER_CAPACITY];
         let poses = browser_poses();
         let player_count = poses.len().max(1);
-        for (index, pose) in poses.iter().take(2).enumerate() {
-            actions[index] |= recognizers[index].update(pose).triggered;
-        }
-        actions[0] |= keyboard_actions();
+        #[cfg(target_arch = "wasm32")]
+        let (fallback_actions, remote_actions) = unsafe {
+            let mut fallback = [keyboard_actions(), 0];
+            fallback[0] |= bb_take_gamepad_actions(0);
+            fallback[1] |= bb_take_gamepad_actions(1);
+            (
+                fallback,
+                [bb_take_remote_actions(0), bb_take_remote_actions(1)],
+            )
+        };
+        #[cfg(not(target_arch = "wasm32"))]
+        let (fallback_actions, remote_actions) = ([keyboard_actions(), 0], [0, 0]);
 
+        runtime.update(
+            dt,
+            MotionInputFrame {
+                local_poses: [poses.first().copied(), poses.get(1).copied()],
+                fallback_actions,
+                remote_actions,
+                custom_target: custom_target(runtime.game.beat_index),
+            },
+        );
         #[cfg(target_arch = "wasm32")]
         unsafe {
-            actions[0] |= bb_take_gamepad_actions(0);
-            actions[1] |= bb_take_gamepad_actions(1);
-            for (player, mask) in actions.iter().take(2).copied().enumerate() {
+            for (player, mask) in runtime.local_triggered().into_iter().enumerate() {
                 if mask != 0 {
                     bb_send_local_action(player as u32, mask);
                 }
             }
-            actions[2] |= bb_take_remote_actions(0);
-            actions[3] |= bb_take_remote_actions(1);
         }
-
-        game.update(dt, actions, custom_target(game.beat_index));
+        motion_stage.update(dt, &runtime);
 
         let width = screen_width();
         let height = screen_height();
-        let accent = mode_color(game.mode);
+        let accent = mode_color(runtime.game.mode);
         clear_background(Color::from_rgba(8, 12, 28, 255));
         draw_circle(
             width * 0.15,
@@ -228,8 +233,8 @@ async fn main() {
         );
 
         let margin = (width * 0.045).max(24.0);
-        draw_text("BRAINBREAK", margin, 58.0, 34.0, WHITE);
-        draw_text(game.mode.title(), margin, 94.0, 22.0, accent);
+        draw_text("BRAINBREAK", margin, 48.0, 30.0, WHITE);
+        draw_text("MOTION REACTOR", margin, 76.0, 18.0, accent);
         let status = match network_status() {
             3 => "HOST ONLINE",
             2 => "P2P CONNECTED",
@@ -245,54 +250,39 @@ async fn main() {
             Color::from_rgba(148, 163, 184, 255),
         );
 
-        let cue_w = (width * 0.56).min(720.0);
-        let cue_h = (height * 0.38).min(310.0);
-        let cue_x = (width - cue_w) * 0.5;
-        let cue_y = height * 0.18;
-        draw_round_rect(
-            cue_x,
-            cue_y,
-            cue_w,
-            cue_h,
-            Color::from_rgba(20, 28, 55, 235),
-        );
+        let stage_x = if width >= 900.0 { width * 0.20 } else { margin };
+        let stage_w = if width >= 900.0 {
+            width * 0.60
+        } else {
+            width - margin * 2.0
+        };
+        let stage_y = if height < 620.0 { 84.0 } else { 98.0 };
+        let stage_h = if width < 700.0 {
+            height * 0.55
+        } else {
+            (height - 280.0).max(300.0)
+        };
+        let stage = Rect::new(stage_x, stage_y, stage_w, stage_h);
+        motion_stage.draw(&runtime, stage, accent);
         draw_rectangle(
-            cue_x + 20.0,
-            cue_y + cue_h - 18.0,
-            (cue_w - 40.0) * game.beat_progress,
-            6.0,
+            stage.x + 18.0,
+            stage.y + 10.0,
+            (stage.w - 36.0) * runtime.game.beat_progress,
+            5.0,
             accent,
         );
-        draw_rectangle_lines(
-            cue_x + 20.0,
-            cue_y + cue_h - 18.0,
-            cue_w - 40.0,
-            6.0,
-            1.0,
-            Color::from_rgba(71, 85, 105, 255),
+        let mode_label = format!(
+            "{}  •  {}",
+            runtime.game.mode.title(),
+            runtime.game.target.label()
         );
-        let ready = if game.beat_progress < 0.55 {
-            "GET READY"
-        } else {
-            "MOVE!"
-        };
-        let ready_size = measure_text(ready, None, 24, 1.0);
+        let ready_size = measure_text(&mode_label, None, 17, 1.0);
         draw_text(
-            ready,
+            &mode_label,
             width * 0.5 - ready_size.width * 0.5,
-            cue_y + 62.0,
-            24.0,
+            stage.y - 12.0,
+            17.0,
             Color::from_rgba(148, 163, 184, 255),
-        );
-        let target = game.target.label();
-        let font_size = if width < 680.0 { 42 } else { 64 };
-        let target_size = measure_text(target, None, font_size, 1.0);
-        draw_text(
-            target,
-            width * 0.5 - target_size.width * 0.5,
-            cue_y + cue_h * 0.58,
-            font_size as f32,
-            WHITE,
         );
 
         let displayed_players = if network_status() >= 2 {
@@ -307,43 +297,48 @@ async fn main() {
         let cards_total =
             card_w * displayed_players as f32 + gap * (displayed_players as f32 - 1.0);
         let start_x = (width - cards_total) * 0.5;
-        let card_y = cue_y + cue_h + 28.0;
+        let card_y = stage.y + stage.h + 14.0;
         for player in 0..displayed_players {
             let x = start_x + player as f32 * (card_w + gap);
-            draw_round_rect(x, card_y, card_w, 104.0, Color::from_rgba(15, 23, 42, 245));
+            draw_round_panel(
+                Rect::new(x, card_y, card_w, 78.0),
+                Color::from_rgba(15, 23, 42, 245),
+            );
             draw_text(
                 format!("P{}", player + 1),
                 x + 16.0,
-                card_y + 30.0,
-                18.0,
+                card_y + 25.0,
+                15.0,
                 Color::from_rgba(148, 163, 184, 255),
             );
             draw_text(
-                game.scores[player].to_string(),
+                runtime.game.scores[player].to_string(),
                 x + 16.0,
-                card_y + 67.0,
-                34.0,
+                card_y + 57.0,
+                28.0,
                 WHITE,
             );
             draw_text(
-                format!("x{}", game.combos[player]),
+                format!("x{}", runtime.game.combos[player]),
                 x + card_w - 54.0,
-                card_y + 66.0,
-                18.0,
+                card_y + 55.0,
+                16.0,
                 accent,
             );
         }
 
-        let help =
-            "1/2/3 MODE  •  CAMERA / KEYBOARD / GAMEPAD  •  Q/E HANDS  •  SPACE JUMP  •  C CLAP";
-        let help_size = measure_text(help, None, 15, 1.0);
-        draw_text(
-            help,
-            width * 0.5 - help_size.width * 0.5,
-            height - 30.0,
-            15.0,
-            Color::from_rgba(100, 116, 139, 255),
-        );
+        if height >= 650.0 {
+            let help =
+                "1/2/3 MODE  •  MOVE INTO THE GLOWING ZONE  •  Q/E HANDS  •  SPACE JUMP  •  C CLAP";
+            let help_size = measure_text(help, None, 13, 1.0);
+            draw_text(
+                help,
+                width * 0.5 - help_size.width * 0.5,
+                height - 18.0,
+                13.0,
+                Color::from_rgba(100, 116, 139, 255),
+            );
+        }
 
         next_frame().await;
     }

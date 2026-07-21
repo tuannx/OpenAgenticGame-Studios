@@ -14,6 +14,7 @@ export interface PoseSnapshot {
 const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 let detector: poseDetection.PoseDetector | undefined;
 let running = false;
+let activeStream: MediaStream | undefined;
 
 async function configureBackend(): Promise<string> {
   setWasmPaths('/tfjs-wasm/');
@@ -35,10 +36,13 @@ function drawPoses(canvas: HTMLCanvasElement, poses: PoseSnapshot[]): void {
   if (!context) return;
   context.clearRect(0, 0, canvas.width, canvas.height);
   const links = [[5,6],[5,7],[7,9],[6,8],[8,10],[5,11],[6,12],[11,12],[11,13],[13,15],[12,14],[14,16]];
+  const colors = ['#22d3ee', '#c4b5fd'];
   context.lineWidth = 3;
-  context.strokeStyle = '#67e8f9';
-  context.fillStyle = '#c4b5fd';
-  for (const pose of poses) {
+  context.font = '600 13px system-ui';
+  for (const [player, pose] of poses.entries()) {
+    const color = colors[player % colors.length];
+    context.strokeStyle = color;
+    context.fillStyle = color;
     for (const [from, to] of links) {
       const a = pose.keypoints[from];
       const b = pose.keypoints[to];
@@ -54,6 +58,17 @@ function drawPoses(canvas: HTMLCanvasElement, poses: PoseSnapshot[]): void {
       context.arc(keypoint.x * canvas.width, keypoint.y * canvas.height, 4, 0, Math.PI * 2);
       context.fill();
     }
+    const visible = pose.keypoints.filter((keypoint) => keypoint.score >= 0.25);
+    if (visible.length > 0) {
+      const left = Math.min(...visible.map((keypoint) => keypoint.x)) * canvas.width;
+      const top = Math.min(...visible.map((keypoint) => keypoint.y)) * canvas.height;
+      const right = Math.max(...visible.map((keypoint) => keypoint.x)) * canvas.width;
+      const bottom = Math.max(...visible.map((keypoint) => keypoint.y)) * canvas.height;
+      context.globalAlpha = 0.75;
+      context.strokeRect(left - 8, top - 8, right - left + 16, bottom - top + 16);
+      context.fillText(`P${player + 1} ${Math.round(pose.quality * 100)}%`, left, Math.max(16, top - 13));
+      context.globalAlpha = 1;
+    }
   }
 }
 
@@ -66,7 +81,7 @@ export async function startVision(
   if (running) return;
   running = true;
   onStatus('Requesting camera…');
-  const stream = await navigator.mediaDevices.getUserMedia({
+  activeStream = await navigator.mediaDevices.getUserMedia({
     audio: false,
     video: {
       facingMode: 'user',
@@ -75,7 +90,7 @@ export async function startVision(
       frameRate: { ideal: isMobile ? 20 : 30, max: 30 },
     },
   });
-  video.srcObject = stream;
+  video.srcObject = activeStream;
   await video.play();
   overlay.width = video.videoWidth || 640;
   overlay.height = video.videoHeight || 480;
@@ -99,6 +114,7 @@ export async function startVision(
       lastInference = now;
       try {
         const results = await detector!.estimatePoses(video, { maxPoses: isMobile ? 1 : 2, flipHorizontal: true });
+        if (!running) return;
         const poses = results
           .map((pose, index): PoseSnapshot => {
             const points = pose.keypoints.map((point) => ({
@@ -128,4 +144,6 @@ export function stopVision(): void {
   running = false;
   detector?.dispose();
   detector = undefined;
+  activeStream?.getTracks().forEach((track) => track.stop());
+  activeStream = undefined;
 }

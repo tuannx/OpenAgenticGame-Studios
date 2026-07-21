@@ -9,6 +9,8 @@ const overlay = document.querySelector<HTMLCanvasElement>('#pose-overlay')!;
 const cameraStatus = document.querySelector<HTMLElement>('#camera-status')!;
 const roomStatus = document.querySelector<HTMLElement>('#room-status')!;
 const roomCode = document.querySelector<HTMLInputElement>('#room-code')!;
+const cameraButton = document.querySelector<HTMLButtonElement>('#camera-button')!;
+let cameraRunning = false;
 
 roomTransport.onStatus = (status) => { roomStatus.textContent = status; };
 
@@ -16,12 +18,29 @@ async function unlockAudio(): Promise<void> {
   await proceduralBeat.start();
 }
 
-document.querySelector('#camera-button')!.addEventListener('click', async () => {
+cameraButton.addEventListener('click', async () => {
+  if (cameraRunning) {
+    const { stopVision } = await import('./vision');
+    stopVision();
+    updatePoseBridge([]);
+    video.srcObject = null;
+    overlay.getContext('2d')?.clearRect(0, 0, overlay.width, overlay.height);
+    cameraRunning = false;
+    cameraButton.textContent = 'Enable motion';
+    cameraStatus.textContent = 'Camera off • local only';
+    return;
+  }
   try {
     await unlockAudio();
     const { startVision } = await import('./vision');
     await startVision(video, overlay, updatePoseBridge, (status) => { cameraStatus.textContent = status; });
+    cameraRunning = true;
+    cameraButton.textContent = 'Stop camera';
   } catch (error) {
+    const { stopVision } = await import('./vision');
+    stopVision();
+    video.srcObject = null;
+    cameraRunning = false;
     cameraStatus.textContent = error instanceof Error ? error.message : 'Camera failed';
   }
 });

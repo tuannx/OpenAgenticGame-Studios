@@ -10,7 +10,7 @@ pub struct Keypoint {
     pub confidence: f32,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PoseFrame {
     pub tracked_id: u32,
     pub quality: f32,
@@ -68,9 +68,38 @@ pub struct ActionSample {
     pub triggered: u32,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct RecognizerConfig {
+    pub minimum_pose_quality: f32,
+    pub minimum_keypoint_confidence: f32,
+    pub lateral_move_distance: f32,
+    pub jump_distance: f32,
+    pub squat_distance: f32,
+    pub raised_hand_distance: f32,
+    pub clap_width_ratio: f32,
+    pub cooldown_ms: f64,
+}
+
+impl Default for RecognizerConfig {
+    fn default() -> Self {
+        Self {
+            minimum_pose_quality: 0.25,
+            minimum_keypoint_confidence: 0.25,
+            lateral_move_distance: 0.075,
+            jump_distance: 0.065,
+            squat_distance: 0.075,
+            raised_hand_distance: 0.035,
+            clap_width_ratio: 0.38,
+            cooldown_ms: 220.0,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct PoseRecognizer {
+    config: RecognizerConfig,
     neutral_hip_y: Option<f32>,
+    neutral_center_x: Option<f32>,
     neutral_samples: u16,
     previous_active: u32,
     last_trigger_ms: [f64; 7],
@@ -78,18 +107,24 @@ pub struct PoseRecognizer {
 
 impl Default for PoseRecognizer {
     fn default() -> Self {
+        Self::new(RecognizerConfig::default())
+    }
+}
+
+impl PoseRecognizer {
+    pub fn new(config: RecognizerConfig) -> Self {
         Self {
+            config,
             neutral_hip_y: None,
+            neutral_center_x: None,
             neutral_samples: 0,
             previous_active: 0,
             last_trigger_ms: [-1_000.0; 7],
         }
     }
-}
 
-impl PoseRecognizer {
     pub fn update(&mut self, pose: &PoseFrame) -> ActionSample {
-        if pose.quality < 0.25 {
+        if pose.quality < self.config.minimum_pose_quality {
             self.previous_active = 0;
             return ActionSample::default();
         }
@@ -111,34 +146,50 @@ impl PoseRecognizer {
         let hip_y = (lh.y + rh.y) * 0.5;
         let shoulder_width = (ls.x - rs.x).abs().max(0.08);
 
-        let neutral = self.neutral_hip_y.get_or_insert(hip_y);
+        let neutral_hip_y = self.neutral_hip_y.get_or_insert(hip_y);
+        let neutral_center_x = self.neutral_center_x.get_or_insert(shoulder_center_x);
         if self.neutral_samples < 60 {
-            *neutral = (*neutral * f32::from(self.neutral_samples) + hip_y)
+            *neutral_hip_y = (*neutral_hip_y * f32::from(self.neutral_samples) + hip_y)
+                / f32::from(self.neutral_samples + 1);
+            *neutral_center_x = (*neutral_center_x * f32::from(self.neutral_samples)
+                + shoulder_center_x)
                 / f32::from(self.neutral_samples + 1);
             self.neutral_samples += 1;
-        } else if (hip_y - *neutral).abs() < 0.04 {
-            *neutral = *neutral * 0.995 + hip_y * 0.005;
+        } else {
+            if (hip_y - *neutral_hip_y).abs() < 0.04 {
+                *neutral_hip_y = *neutral_hip_y * 0.995 + hip_y * 0.005;
+            }
+            if (shoulder_center_x - *neutral_center_x).abs() < 0.04 {
+                *neutral_center_x = *neutral_center_x * 0.995 + shoulder_center_x * 0.005;
+            }
         }
 
         let mut active = 0;
-        if shoulder_center_x < 0.40 {
+        if shoulder_center_x < *neutral_center_x - self.config.lateral_move_distance {
             active |= Action::MoveLeft.mask();
-        } else if shoulder_center_x > 0.60 {
+        } else if shoulder_center_x > *neutral_center_x + self.config.lateral_move_distance {
             active |= Action::MoveRight.mask();
         }
-        if hip_y < *neutral - 0.065 {
+        if hip_y < *neutral_hip_y - self.config.jump_distance {
             active |= Action::Jump.mask();
-        } else if hip_y > *neutral + 0.075 {
+        } else if hip_y > *neutral_hip_y + self.config.squat_distance {
             active |= Action::Squat.mask();
         }
-        if lw.confidence > 0.25 && lw.y < ls.y - 0.035 {
+        if lw.confidence > self.config.minimum_keypoint_confidence
+            && lw.y < ls.y - self.config.raised_hand_distance
+        {
             active |= Action::LeftUp.mask();
         }
-        if rw.confidence > 0.25 && rw.y < rs.y - 0.035 {
+        if rw.confidence > self.config.minimum_keypoint_confidence
+            && rw.y < rs.y - self.config.raised_hand_distance
+        {
             active |= Action::RightUp.mask();
         }
         let wrist_distance = ((lw.x - rw.x).powi(2) + (lw.y - rw.y).powi(2)).sqrt();
-        if lw.confidence > 0.25 && rw.confidence > 0.25 && wrist_distance < shoulder_width * 0.38 {
+        if lw.confidence > self.config.minimum_keypoint_confidence
+            && rw.confidence > self.config.minimum_keypoint_confidence
+            && wrist_distance < shoulder_width * self.config.clap_width_ratio
+        {
             active |= Action::Clap.mask();
         }
 
@@ -146,7 +197,7 @@ impl PoseRecognizer {
         let mut triggered = 0;
         for (index, action) in Action::ALL.iter().enumerate() {
             if rising & action.mask() != 0
-                && pose.timestamp_ms - self.last_trigger_ms[index] >= 220.0
+                && pose.timestamp_ms - self.last_trigger_ms[index] >= self.config.cooldown_ms
             {
                 triggered |= action.mask();
                 self.last_trigger_ms[index] = pose.timestamp_ms;
@@ -155,6 +206,43 @@ impl PoseRecognizer {
         self.previous_active = active;
         ActionSample { active, triggered }
     }
+
+    pub fn lose_tracking(&mut self) {
+        self.previous_active = 0;
+    }
+
+    pub fn calibration_progress(&self) -> f32 {
+        f32::from(self.neutral_samples) / 60.0
+    }
+
+    pub fn reset(&mut self) {
+        let config = self.config;
+        *self = Self::new(config);
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct PlayerMotionState {
+    pub pose: Option<PoseFrame>,
+    pub calibration: f32,
+    pub active: u32,
+    pub triggered: u32,
+    pub hit: bool,
+    pub miss: bool,
+}
+
+impl PlayerMotionState {
+    pub fn quality(self) -> f32 {
+        self.pose.map_or(0.0, |pose| pose.quality)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct MotionInputFrame {
+    pub local_poses: [Option<PoseFrame>; 2],
+    pub fallback_actions: [u32; 2],
+    pub remote_actions: [u32; 2],
+    pub custom_target: Option<u32>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -319,6 +407,88 @@ impl GameState {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct MotionRuntime {
+    pub game: GameState,
+    pub players: [PlayerMotionState; PLAYER_CAPACITY],
+    recognizers: [PoseRecognizer; 2],
+}
+
+impl Default for MotionRuntime {
+    fn default() -> Self {
+        Self::new(GameMode::MirrorBeat, RecognizerConfig::default())
+    }
+}
+
+impl MotionRuntime {
+    pub fn new(mode: GameMode, recognizer_config: RecognizerConfig) -> Self {
+        Self {
+            game: GameState::new(mode),
+            players: [PlayerMotionState::default(); PLAYER_CAPACITY],
+            recognizers: [
+                PoseRecognizer::new(recognizer_config),
+                PoseRecognizer::new(recognizer_config),
+            ],
+        }
+    }
+
+    pub fn set_mode(&mut self, mode: GameMode) {
+        self.game.set_mode(mode);
+        self.players = [PlayerMotionState::default(); PLAYER_CAPACITY];
+        for recognizer in &mut self.recognizers {
+            recognizer.reset();
+        }
+    }
+
+    pub fn update(&mut self, dt: f32, input: MotionInputFrame) {
+        for player in &mut self.players {
+            player.triggered = 0;
+            player.hit = false;
+            player.miss = false;
+        }
+
+        for player in 0..2 {
+            let previous_id = self.players[player].pose.map(|pose| pose.tracked_id);
+            let next_id = input.local_poses[player].map(|pose| pose.tracked_id);
+            if previous_id.is_some() && next_id.is_some() && previous_id != next_id {
+                self.recognizers[player].reset();
+            } else if next_id.is_none() {
+                self.recognizers[player].lose_tracking();
+            }
+            self.players[player].pose = input.local_poses[player];
+            let detected = input.local_poses[player]
+                .map(|pose| self.recognizers[player].update(&pose))
+                .unwrap_or_default();
+            self.players[player].active = detected.active;
+            self.players[player].calibration = if input.local_poses[player].is_some() {
+                self.recognizers[player].calibration_progress()
+            } else {
+                0.0
+            };
+            self.players[player].triggered = detected.triggered | input.fallback_actions[player];
+        }
+        for player in 0..2 {
+            let index = player + 2;
+            self.players[index].pose = None;
+            self.players[index].active = input.remote_actions[player];
+            self.players[index].triggered = input.remote_actions[player];
+        }
+
+        let scores_before = self.game.scores;
+        let triggered = self.players.map(|player| player.triggered);
+        self.game.update(dt, triggered, input.custom_target);
+        for (index, player) in self.players.iter_mut().enumerate() {
+            let attempted = player.triggered != 0;
+            player.hit = attempted && self.game.scores[index] > scores_before[index];
+            player.miss = attempted && !player.hit;
+        }
+    }
+
+    pub fn local_triggered(&self) -> [u32; 2] {
+        [self.players[0].triggered, self.players[1].triggered]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -427,5 +597,101 @@ mod tests {
         );
         assert_eq!(game.scores[0], 260);
         assert_eq!(game.scores[1], 260);
+    }
+
+    #[test]
+    fn motion_runtime_exposes_pose_action_and_hit_feedback() {
+        let mut runtime = MotionRuntime::default();
+        let pose = standing_pose(0.0);
+        runtime.update(
+            0.01,
+            MotionInputFrame {
+                local_poses: [Some(pose), None],
+                fallback_actions: [Action::LeftUp.mask(), 0],
+                ..MotionInputFrame::default()
+            },
+        );
+        assert_eq!(runtime.players[0].pose, Some(pose));
+        assert_eq!(runtime.local_triggered(), [Action::LeftUp.mask(), 0]);
+        assert!(runtime.players[0].hit);
+        assert!(!runtime.players[0].miss);
+    }
+
+    #[test]
+    fn motion_runtime_marks_wrong_actions_as_misses() {
+        let mut runtime = MotionRuntime::default();
+        runtime.update(
+            0.01,
+            MotionInputFrame {
+                fallback_actions: [Action::MoveRight.mask(), 0],
+                ..MotionInputFrame::default()
+            },
+        );
+        assert!(runtime.players[0].miss);
+        assert!(!runtime.players[0].hit);
+    }
+
+    #[test]
+    fn recognizer_thresholds_are_configurable() {
+        let mut recognizer = PoseRecognizer::new(RecognizerConfig {
+            lateral_move_distance: 0.05,
+            ..RecognizerConfig::default()
+        });
+        for sample in 0..60 {
+            recognizer.update(&standing_pose(f64::from(sample) * 20.0));
+        }
+        let mut shifted = standing_pose(1_500.0);
+        for keypoint in &mut shifted.keypoints {
+            keypoint.x -= 0.08;
+        }
+        let sample = recognizer.update(&shifted);
+        assert_ne!(sample.active & Action::MoveLeft.mask(), 0);
+    }
+
+    #[test]
+    fn two_players_calibrate_lateral_motion_independently() {
+        let mut left_player = PoseRecognizer::default();
+        let mut right_player = PoseRecognizer::default();
+        let mut left_pose = standing_pose(0.0);
+        let mut right_pose = standing_pose(0.0);
+        for keypoint in &mut left_pose.keypoints {
+            keypoint.x -= 0.22;
+        }
+        for keypoint in &mut right_pose.keypoints {
+            keypoint.x += 0.22;
+        }
+        assert_eq!(
+            left_player.update(&left_pose).active & Action::MoveLeft.mask(),
+            0
+        );
+        assert_eq!(
+            right_player.update(&right_pose).active & Action::MoveRight.mask(),
+            0
+        );
+    }
+
+    #[test]
+    fn reacquired_pose_can_trigger_an_action_again() {
+        let mut runtime = MotionRuntime::default();
+        let mut raised = standing_pose(300.0);
+        raised.keypoints[9].y = 0.20;
+        runtime.update(
+            0.01,
+            MotionInputFrame {
+                local_poses: [Some(raised), None],
+                ..MotionInputFrame::default()
+            },
+        );
+        assert_ne!(runtime.players[0].triggered & Action::LeftUp.mask(), 0);
+        runtime.update(0.01, MotionInputFrame::default());
+        raised.timestamp_ms = 600.0;
+        runtime.update(
+            0.01,
+            MotionInputFrame {
+                local_poses: [Some(raised), None],
+                ..MotionInputFrame::default()
+            },
+        );
+        assert_ne!(runtime.players[0].triggered & Action::LeftUp.mask(), 0);
     }
 }

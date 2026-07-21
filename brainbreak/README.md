@@ -6,6 +6,30 @@ events are sent through WebRTC.
 
 Live build: <https://brainbreak-motion-party.tuannx87.workers.dev>
 
+## Framework API
+
+`brainbreak-core` is the renderer-independent framework layer. A host supplies
+normalized poses plus fallback/remote actions and reads one stable snapshot:
+
+```rust
+let mut runtime = MotionRuntime::new(GameMode::MirrorBeat, RecognizerConfig::default());
+runtime.update(delta_seconds, MotionInputFrame {
+    local_poses: [camera_pose, None],
+    fallback_actions: [keyboard_mask, 0],
+    remote_actions: [remote_p1, remote_p2],
+    custom_target: None,
+});
+
+for player in runtime.players {
+    // pose, active, triggered, hit, miss
+}
+```
+
+This API has no Macroquad, TensorFlow.js, DOM, or Cloudflare dependency. Motion
+Reactor in `brainbreak-game` is the first application adapter: it projects live
+skeletons into spatial target zones and turns recognized actions into score,
+shockwave, and particle feedback.
+
 ## Local development
 
 ```bash
