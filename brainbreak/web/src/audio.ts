@@ -7,6 +7,7 @@ export const MUSIC_TRACK = Object.freeze({
   sourceUrl: 'https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1600067&Search=Search',
   licenseUrl: 'https://creativecommons.org/licenses/by/4.0/',
 });
+export const MUSIC_PLAYBACK_RATE = 1;
 
 export interface MusicMetrics {
   phase: number;
@@ -29,6 +30,12 @@ export function beatPulse(phase: number): number {
   const normalized = ((phase % 1) + 1) % 1;
   const distance = Math.min(normalized, 1 - normalized);
   return Math.exp(-distance * 13);
+}
+
+export function comboPitchRatio(combo: number): number {
+  const safeCombo = Number.isFinite(combo) ? Math.max(0, Math.floor(combo)) : 0;
+  const semitones = Math.min(4, Math.floor(safeCombo / 5));
+  return 2 ** (semitones / 12);
 }
 
 class MusicEngine {
@@ -55,6 +62,7 @@ class MusicEngine {
       this.gain.gain.value = this.muted ? 0 : 0.72;
       source.connect(this.analyser).connect(this.gain).connect(this.context.destination);
     }
+    this.audio.playbackRate = MUSIC_PLAYBACK_RATE;
     await this.context.resume();
     await this.audio.play();
   }
@@ -67,32 +75,59 @@ class MusicEngine {
     return this.muted;
   }
 
+  /** Pause the music (used by Freeze Dance — music stopping IS the freeze cue). */
+  pause(): void {
+    if (this.audio && !this.audio.paused) {
+      this.audio.pause();
+    }
+  }
+
+  /** Resume the music from where it paused. */
+  resume(): void {
+    if (this.audio && this.audio.paused && this.context?.state === 'running') {
+      void this.audio.play().catch(() => undefined);
+    }
+  }
+
+  get isPlaying(): boolean {
+    return Boolean(this.audio && !this.audio.paused && !this.audio.ended);
+  }
+
   get isMuted(): boolean {
     return this.muted;
   }
 
-  playFeedback(kind: number): void {
+  playFeedback(kind: number, comboStreak = 0): void {
     const context = this.context;
     if (!context || context.state !== 'running') return;
     const at = context.currentTime;
     const oscillator = context.createOscillator();
     const gain = context.createGain();
+    const pitch = kind === 2 ? 1 : comboPitchRatio(comboStreak);
     if (kind === 2) {
+      // Miss / Hazard collision
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        navigator.vibrate([100, 50, 100]);
+      }
       oscillator.type = 'sawtooth';
       oscillator.frequency.setValueAtTime(150, at);
       oscillator.frequency.exponentialRampToValueAtTime(52, at + 0.18);
       gain.gain.setValueAtTime(0.11, at);
       gain.gain.exponentialRampToValueAtTime(0.001, at + 0.2);
     } else if (kind === 3) {
+      // Orb collection / Boost / Clap
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        navigator.vibrate(40);
+      }
       oscillator.type = 'sine';
-      oscillator.frequency.setValueAtTime(540, at);
-      oscillator.frequency.exponentialRampToValueAtTime(920, at + 0.14);
+      oscillator.frequency.setValueAtTime(540 * pitch, at);
+      oscillator.frequency.exponentialRampToValueAtTime(920 * pitch, at + 0.14);
       gain.gain.setValueAtTime(0.085, at);
       gain.gain.exponentialRampToValueAtTime(0.001, at + 0.18);
     } else {
       oscillator.type = 'triangle';
-      oscillator.frequency.setValueAtTime(290, at);
-      oscillator.frequency.exponentialRampToValueAtTime(430, at + 0.08);
+      oscillator.frequency.setValueAtTime(290 * pitch, at);
+      oscillator.frequency.exponentialRampToValueAtTime(430 * pitch, at + 0.08);
       gain.gain.setValueAtTime(0.04, at);
       gain.gain.exponentialRampToValueAtTime(0.001, at + 0.1);
     }

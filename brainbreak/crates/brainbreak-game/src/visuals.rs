@@ -1,5 +1,5 @@
 use brainbreak_core::{
-    MotionRuntime, PoseFrame, RunnerFeedback, RunnerGame, RunnerHazard, RunnerObstacle,
+    GameMode, MotionRuntime, PoseFrame, RunnerFeedback, RunnerGame, RunnerHazard, RunnerObstacle,
 };
 use macroquad::prelude::*;
 
@@ -24,7 +24,202 @@ pub struct AudioVisual {
     pub phase: f32,
     pub pulse: f32,
     pub energy: f32,
-    pub playing: bool,
+}
+
+const ACTION_CUE_MAX_DISTANCE: f32 = 0.82;
+const FEEDBACK_PULSE_SECONDS: f32 = 0.72;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ActionPictogram {
+    Dodge,
+    Jump,
+    Squat,
+    Clap,
+}
+
+type ScaledSegment = ((f32, f32), (f32, f32));
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ActionCuePresentation {
+    verb: &'static str,
+    pictogram: ActionPictogram,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ActionCueLayout {
+    panel: Rect,
+    icon_center: Vec2,
+    icon_scale: f32,
+    text_x: f32,
+    verb_baseline: f32,
+    verb_font_size: f32,
+    lane_baseline: f32,
+    lane_font_size: f32,
+    lane_slots: Rect,
+    proximity_rail: Rect,
+}
+
+fn action_cue_presentation(kind: RunnerHazard) -> ActionCuePresentation {
+    match kind {
+        RunnerHazard::LaneBlock => ActionCuePresentation {
+            verb: "DODGE",
+            pictogram: ActionPictogram::Dodge,
+        },
+        RunnerHazard::Hurdle => ActionCuePresentation {
+            verb: "JUMP",
+            pictogram: ActionPictogram::Jump,
+        },
+        RunnerHazard::OverheadGate => ActionCuePresentation {
+            verb: "SQUAT",
+            pictogram: ActionPictogram::Squat,
+        },
+        RunnerHazard::BeatOrb => ActionCuePresentation {
+            verb: "CLAP",
+            pictogram: ActionPictogram::Clap,
+        },
+    }
+}
+
+fn action_cue_layout(bounds: Rect) -> ActionCueLayout {
+    let compact = bounds.h < 500.0;
+    let panel_width = (bounds.w - 24.0).min(if compact { 252.0 } else { 280.0 });
+    let panel_height = if compact { 94.0 } else { 112.0 };
+    let panel = Rect::new(
+        bounds.x + (bounds.w - panel_width) * 0.5,
+        bounds.y + if compact { 58.0 } else { 64.0 },
+        panel_width,
+        panel_height,
+    );
+    let icon_scale = if compact { 25.0 } else { 31.0 };
+    let text_x = panel.x + if compact { 78.0 } else { 88.0 };
+    ActionCueLayout {
+        panel,
+        icon_center: vec2(
+            panel.x + if compact { 42.0 } else { 48.0 },
+            panel.y + panel.h * 0.48,
+        ),
+        icon_scale,
+        text_x,
+        verb_baseline: panel.y + if compact { 35.0 } else { 42.0 },
+        verb_font_size: if compact { 25.0 } else { 30.0 },
+        lane_baseline: panel.y + if compact { 57.0 } else { 68.0 },
+        lane_font_size: if compact { 12.0 } else { 14.0 },
+        lane_slots: Rect::new(
+            text_x,
+            panel.y + if compact { 66.0 } else { 78.0 },
+            (panel.x + panel.w - 14.0 - text_x).min(126.0),
+            if compact { 13.0 } else { 16.0 },
+        ),
+        proximity_rail: Rect::new(panel.x + 14.0, panel.y + panel.h - 8.0, panel.w - 28.0, 4.0),
+    }
+}
+
+fn action_cue_proximity(distance: f32) -> f32 {
+    (1.0 - distance / ACTION_CUE_MAX_DISTANCE).clamp(0.0, 1.0)
+}
+
+fn action_cue_lane_label(lane: i8) -> &'static str {
+    match lane {
+        -1 => "LEFT LANE",
+        1 => "RIGHT LANE",
+        _ => "CENTER LANE",
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum FeedbackGlyph {
+    Check,
+    Cross,
+    BeatSpark,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct FeedbackPresentation {
+    label: &'static str,
+    glyph: FeedbackGlyph,
+}
+
+fn feedback_presentation(feedback: RunnerFeedback) -> Option<FeedbackPresentation> {
+    match feedback {
+        RunnerFeedback::None => None,
+        RunnerFeedback::Dodge => Some(FeedbackPresentation {
+            label: "NICE",
+            glyph: FeedbackGlyph::Check,
+        }),
+        RunnerFeedback::Crash => Some(FeedbackPresentation {
+            label: "NEXT",
+            glyph: FeedbackGlyph::Cross,
+        }),
+        RunnerFeedback::BeatPickup => Some(FeedbackPresentation {
+            label: "BEAT",
+            glyph: FeedbackGlyph::BeatSpark,
+        }),
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct FeedbackPulse {
+    kind: RunnerFeedback,
+    remaining: f32,
+}
+
+impl FeedbackPulse {
+    fn start(&mut self, kind: RunnerFeedback) {
+        self.kind = kind;
+        self.remaining = if kind == RunnerFeedback::None {
+            0.0
+        } else {
+            FEEDBACK_PULSE_SECONDS
+        };
+    }
+
+    fn update(&mut self, dt: f32) {
+        self.remaining = (self.remaining - dt.max(0.0)).max(0.0);
+        if self.remaining == 0.0 {
+            self.kind = RunnerFeedback::None;
+        }
+    }
+
+    fn intensity(self) -> f32 {
+        (self.remaining / FEEDBACK_PULSE_SECONDS).clamp(0.0, 1.0)
+    }
+
+    fn is_visible(self) -> bool {
+        self.kind != RunnerFeedback::None && self.remaining > 0.0
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct FeedbackMarkerLayout {
+    center: Vec2,
+    radius: f32,
+    player_baseline: f32,
+    label_baseline: f32,
+    label_font_size: f32,
+}
+
+fn feedback_marker_layout(
+    bounds: Rect,
+    visible_index: usize,
+    visible_count: usize,
+) -> FeedbackMarkerLayout {
+    let count = visible_count.clamp(1, 4);
+    let compact = bounds.h < 500.0;
+    let radius = if compact { 22.0 } else { 28.0 };
+    let gap = if compact { 10.0 } else { 14.0 };
+    let total_width = count as f32 * radius * 2.0 + (count - 1) as f32 * gap;
+    let start_x = bounds.x + (bounds.w - total_width) * 0.5 + radius;
+    let center = vec2(
+        start_x + visible_index.min(count - 1) as f32 * (radius * 2.0 + gap),
+        bounds.y + bounds.h * if compact { 0.56 } else { 0.66 },
+    );
+    FeedbackMarkerLayout {
+        center,
+        radius,
+        player_baseline: center.y - radius - 6.0,
+        label_baseline: center.y + radius + if compact { 16.0 } else { 19.0 },
+        label_font_size: if compact { 14.0 } else { 17.0 },
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -39,7 +234,7 @@ struct Particle {
 pub struct RunnerStage {
     particles: [Particle; PARTICLE_CAPACITY],
     particle_cursor: usize,
-    feedback_flash: [f32; 4],
+    feedback_pulses: [FeedbackPulse; 4],
     elapsed: f32,
 }
 
@@ -48,10 +243,19 @@ impl Default for RunnerStage {
         Self {
             particles: std::array::from_fn(|_| Particle::default()),
             particle_cursor: 0,
-            feedback_flash: [0.0; 4],
+            feedback_pulses: [FeedbackPulse::default(); 4],
             elapsed: 0.0,
         }
     }
+}
+
+fn stage_player_visibility(game: &RunnerGame) -> [bool; 4] {
+    let mut visible = game.players.map(|player| player.evaluated);
+    visible[0] = true;
+    if game.mode == GameMode::DuoGroove {
+        visible[1] = true;
+    }
+    visible
 }
 
 impl RunnerStage {
@@ -66,9 +270,9 @@ impl RunnerStage {
             particle.velocity.y += dt * 0.24;
         }
         for player in 0..4 {
-            self.feedback_flash[player] = (self.feedback_flash[player] - dt * 2.7).max(0.0);
+            self.feedback_pulses[player].update(dt);
             if game.feedback[player] != RunnerFeedback::None {
-                self.feedback_flash[player] = 1.0;
+                self.feedback_pulses[player].start(game.feedback[player]);
                 let color = feedback_color(game.feedback[player]);
                 self.spawn_burst(
                     vec2(lane_normalized(game.players[player].lane), 0.82),
@@ -97,8 +301,9 @@ impl RunnerStage {
         {
             draw_obstacle(bounds, *obstacle, audio);
         }
-        for (player, state) in game.players.iter().enumerate().rev() {
-            if !state.evaluated && player >= 2 {
+        let visible_players = stage_player_visibility(game);
+        for player in (0..game.players.len()).rev() {
+            if !visible_players[player] {
                 continue;
             }
             draw_runner(
@@ -106,12 +311,15 @@ impl RunnerStage {
                 player,
                 game,
                 motion.players[player].pose,
-                self.feedback_flash[player],
+                self.feedback_pulses[player].intensity(),
                 audio,
             );
         }
         self.draw_particles(bounds, audio, reduce_motion);
-        draw_next_cue(bounds, game.next_cue(), audio);
+        if game.phase == brainbreak_core::RunnerPhase::Running {
+            self.draw_feedback_markers(bounds, reduce_motion);
+            draw_next_cue(bounds, game.next_cue(), audio);
+        }
     }
 
     fn draw_particles(&self, bounds: Rect, audio: AudioVisual, reduce_motion: bool) {
@@ -153,6 +361,125 @@ impl RunnerStage {
             self.particle_cursor = (self.particle_cursor + 1) % PARTICLE_CAPACITY;
         }
     }
+
+    fn draw_feedback_markers(&self, bounds: Rect, reduce_motion: bool) {
+        let visible_count = self
+            .feedback_pulses
+            .iter()
+            .filter(|pulse| pulse.is_visible())
+            .count();
+        let mut visible_index = 0;
+        for (player, pulse) in self.feedback_pulses.iter().copied().enumerate() {
+            if !pulse.is_visible() {
+                continue;
+            }
+            draw_feedback_marker(
+                feedback_marker_layout(bounds, visible_index, visible_count),
+                pulse,
+                player,
+                reduce_motion,
+            );
+            visible_index += 1;
+        }
+    }
+}
+
+fn draw_feedback_marker(
+    layout: FeedbackMarkerLayout,
+    pulse: FeedbackPulse,
+    player: usize,
+    reduce_motion: bool,
+) {
+    let Some(presentation) = feedback_presentation(pulse.kind) else {
+        return;
+    };
+    let intensity = pulse.intensity();
+    let progress = 1.0 - intensity;
+    let fade = (intensity / 0.22).min(1.0);
+    let scale = if reduce_motion {
+        1.0
+    } else {
+        1.0 + (progress * std::f32::consts::PI).sin() * 0.12
+    };
+    let radius = layout.radius * scale;
+    let outcome_color = color_with_alpha(feedback_color(pulse.kind), fade);
+    let identity_color = color_with_alpha(player_color(player), fade * 0.9);
+
+    draw_circle(
+        layout.center.x,
+        layout.center.y,
+        radius * 1.12,
+        Color::new(0.015, 0.02, 0.09, fade * 0.86),
+    );
+    draw_circle_lines(
+        layout.center.x,
+        layout.center.y,
+        radius,
+        3.0,
+        identity_color,
+    );
+    draw_feedback_glyph(
+        presentation.glyph,
+        layout.center,
+        radius * 0.72,
+        outcome_color,
+    );
+
+    let player_label = player_label(player);
+    let player_size = measure_text(player_label, None, 12, 1.0);
+    draw_text(
+        player_label,
+        layout.center.x - player_size.width * 0.5,
+        layout.player_baseline,
+        12.0,
+        identity_color,
+    );
+    let label_size = measure_text(presentation.label, None, layout.label_font_size as u16, 1.0);
+    draw_text(
+        presentation.label,
+        layout.center.x - label_size.width * 0.5,
+        layout.label_baseline,
+        layout.label_font_size,
+        outcome_color,
+    );
+}
+
+fn draw_feedback_glyph(glyph: FeedbackGlyph, center: Vec2, scale: f32, color: Color) {
+    let stroke = (scale * 0.18).max(3.0);
+    let segments: &[ScaledSegment] = match glyph {
+        FeedbackGlyph::Check => &[
+            ((-0.58, 0.02), (-0.16, 0.44)),
+            ((-0.16, 0.44), (0.62, -0.46)),
+        ],
+        FeedbackGlyph::Cross => &[
+            ((-0.52, -0.52), (0.52, 0.52)),
+            ((0.52, -0.52), (-0.52, 0.52)),
+        ],
+        FeedbackGlyph::BeatSpark => &[
+            ((0.0, -0.58), (0.42, 0.0)),
+            ((0.42, 0.0), (0.0, 0.58)),
+            ((0.0, 0.58), (-0.42, 0.0)),
+            ((-0.42, 0.0), (0.0, -0.58)),
+            ((0.0, -0.78), (0.0, -1.0)),
+            ((0.0, 0.78), (0.0, 1.0)),
+            ((-0.66, 0.0), (-0.92, 0.0)),
+            ((0.66, 0.0), (0.92, 0.0)),
+        ],
+    };
+    draw_scaled_segments(center, scale, stroke, color, segments);
+}
+
+fn player_label(player: usize) -> &'static str {
+    match player {
+        0 => "P1",
+        1 => "P2",
+        2 => "P3",
+        _ => "P4",
+    }
+}
+
+fn color_with_alpha(color: Color, alpha: f32) -> Color {
+    Color::new(color.r, color.g, color.b, color.a * alpha.clamp(0.0, 1.0))
 }
 
 pub fn draw_round_panel(bounds: Rect, color: Color) {
@@ -590,6 +917,25 @@ fn draw_pose_avatar(anchor: Vec2, body_height: f32, pose: PoseFrame, color: Colo
         Color::new(color.r, color.g, color.b, 0.92),
     );
     draw_circle(head.x, head.y, body_height * 0.031, WHITE);
+
+    // Hand Wrist AR Aura Glow (keypoints 9 & 10)
+    for hand_idx in [9, 10] {
+        if pose.keypoints[hand_idx].confidence >= 0.25 {
+            let wrist = project(hand_idx);
+            draw_circle(
+                wrist.x,
+                wrist.y,
+                body_height * 0.08 + flash * 4.0,
+                Color::new(color.r, color.g, color.b, 0.45),
+            );
+            draw_circle(
+                wrist.x,
+                wrist.y,
+                body_height * 0.035,
+                Color::from_rgba(255, 255, 255, 230),
+            );
+        }
+    }
 }
 
 fn draw_robot_avatar(anchor: Vec2, body_height: f32, sliding: bool, color: Color, flash: f32) {
@@ -650,31 +996,263 @@ fn draw_next_cue(bounds: Rect, next: Option<RunnerObstacle>, audio: AudioVisual)
     let Some(obstacle) = next else {
         return;
     };
-    if obstacle.distance > 0.82 {
+    if obstacle.distance > ACTION_CUE_MAX_DISTANCE {
         return;
     }
-    let lane = match obstacle.lane {
-        -1 => "LEFT",
-        1 => "RIGHT",
-        _ => "CENTER",
-    };
-    let text = format!("{}  /  {}", obstacle.kind.cue(), lane);
-    let font_size = 21;
-    let size = measure_text(&text, None, font_size, 1.0);
-    let width = size.width + 42.0;
-    let x = bounds.x + (bounds.w - width) * 0.5;
-    let y = bounds.y + 18.0;
-    draw_round_panel(
-        Rect::new(x, y, width, 42.0),
-        Color::new(0.03, 0.04, 0.14, 0.78 + audio.pulse * 0.12),
+
+    let presentation = action_cue_presentation(obstacle.kind);
+    let layout = action_cue_layout(bounds);
+    let color = hazard_color(obstacle.kind);
+    let proximity = action_cue_proximity(obstacle.distance);
+    let panel_color = Color::new(
+        0.02,
+        0.025,
+        0.11,
+        0.88 + audio.pulse * 0.08 + proximity * 0.04,
+    );
+
+    draw_round_panel(layout.panel, panel_color);
+    draw_rectangle_lines(
+        layout.panel.x,
+        layout.panel.y,
+        layout.panel.w,
+        layout.panel.h,
+        2.0 + proximity * 2.0,
+        Color::new(color.r, color.g, color.b, 0.58 + proximity * 0.36),
+    );
+
+    draw_circle(
+        layout.icon_center.x,
+        layout.icon_center.y,
+        layout.icon_scale * 1.18,
+        Color::new(color.r, color.g, color.b, 0.09 + audio.pulse * 0.04),
+    );
+    draw_circle_lines(
+        layout.icon_center.x,
+        layout.icon_center.y,
+        layout.icon_scale * (0.95 + proximity * 0.08),
+        2.0 + proximity,
+        Color::new(color.r, color.g, color.b, 0.56),
+    );
+    draw_action_pictogram(
+        presentation.pictogram,
+        layout.icon_center,
+        layout.icon_scale,
+        color,
+    );
+
+    draw_text(
+        presentation.verb,
+        layout.text_x,
+        layout.verb_baseline,
+        layout.verb_font_size,
+        color,
     );
     draw_text(
-        &text,
-        x + 21.0,
-        y + 28.0,
-        font_size as f32,
-        hazard_color(obstacle.kind),
+        action_cue_lane_label(obstacle.lane),
+        layout.text_x,
+        layout.lane_baseline,
+        layout.lane_font_size,
+        Color::from_rgba(226, 232, 240, 255),
     );
+    draw_action_cue_lane_slots(layout.lane_slots, obstacle.lane, color);
+
+    draw_rectangle(
+        layout.proximity_rail.x,
+        layout.proximity_rail.y,
+        layout.proximity_rail.w,
+        layout.proximity_rail.h,
+        Color::new(1.0, 1.0, 1.0, 0.13),
+    );
+    draw_rectangle(
+        layout.proximity_rail.x,
+        layout.proximity_rail.y,
+        layout.proximity_rail.w * proximity,
+        layout.proximity_rail.h,
+        color,
+    );
+    draw_circle(
+        layout.proximity_rail.x + layout.proximity_rail.w * proximity,
+        layout.proximity_rail.y + layout.proximity_rail.h * 0.5,
+        3.0 + proximity * 2.0,
+        WHITE,
+    );
+}
+
+fn draw_action_cue_lane_slots(bounds: Rect, obstacle_lane: i8, color: Color) {
+    let gap = 5.0;
+    let slot_width = (bounds.w - gap * 2.0) / 3.0;
+    for index in 0..3 {
+        let selected = index as i8 - 1 == obstacle_lane;
+        let extra_height = if selected { 4.0 } else { 0.0 };
+        let slot = Rect::new(
+            bounds.x + index as f32 * (slot_width + gap),
+            bounds.y - extra_height,
+            slot_width,
+            bounds.h + extra_height,
+        );
+        if selected {
+            draw_rectangle(
+                slot.x,
+                slot.y,
+                slot.w,
+                slot.h,
+                Color::new(color.r, color.g, color.b, 0.72),
+            );
+        }
+        draw_rectangle_lines(
+            slot.x,
+            slot.y,
+            slot.w,
+            slot.h,
+            if selected { 3.0 } else { 1.5 },
+            if selected {
+                WHITE
+            } else {
+                Color::new(1.0, 1.0, 1.0, 0.28)
+            },
+        );
+    }
+}
+
+fn draw_action_pictogram(pictogram: ActionPictogram, center: Vec2, scale: f32, color: Color) {
+    let stroke = (scale * 0.12).max(3.0);
+    match pictogram {
+        ActionPictogram::Dodge => {
+            let barrier = Rect::new(
+                center.x - scale * 0.22,
+                center.y - scale * 0.40,
+                scale * 0.44,
+                scale * 0.80,
+            );
+            draw_rectangle_lines(barrier.x, barrier.y, barrier.w, barrier.h, stroke, color);
+            draw_scaled_segments(
+                center,
+                scale,
+                stroke * 0.72,
+                color,
+                &[
+                    ((-0.22, -0.40), (0.22, 0.40)),
+                    ((0.22, -0.40), (-0.22, 0.40)),
+                ],
+            );
+            draw_scaled_segments(
+                center,
+                scale,
+                stroke * 0.72,
+                WHITE,
+                &[
+                    ((-0.40, 0.0), (-0.72, 0.0)),
+                    ((-0.72, 0.0), (-0.54, -0.16)),
+                    ((-0.72, 0.0), (-0.54, 0.16)),
+                    ((0.40, 0.0), (0.72, 0.0)),
+                    ((0.72, 0.0), (0.54, -0.16)),
+                    ((0.72, 0.0), (0.54, 0.16)),
+                ],
+            );
+        }
+        ActionPictogram::Jump => {
+            draw_circle(center.x, center.y - scale * 0.34, scale * 0.13, WHITE);
+            draw_scaled_segments(
+                center,
+                scale,
+                stroke,
+                color,
+                &[
+                    ((0.0, -0.20), (0.0, 0.12)),
+                    ((0.0, -0.05), (-0.34, -0.24)),
+                    ((0.0, -0.05), (0.34, -0.24)),
+                    ((0.0, 0.10), (-0.28, 0.36)),
+                    ((0.0, 0.10), (0.28, 0.36)),
+                ],
+            );
+            draw_scaled_segments(
+                center,
+                scale,
+                stroke * 0.72,
+                WHITE,
+                &[
+                    ((0.0, -0.52), (0.0, -0.78)),
+                    ((0.0, -0.78), (-0.14, -0.61)),
+                    ((0.0, -0.78), (0.14, -0.61)),
+                ],
+            );
+        }
+        ActionPictogram::Squat => {
+            draw_circle(
+                center.x - scale * 0.16,
+                center.y - scale * 0.18,
+                scale * 0.13,
+                WHITE,
+            );
+            draw_scaled_segments(
+                center,
+                scale,
+                stroke,
+                color,
+                &[
+                    ((-0.06, -0.10), (0.18, 0.08)),
+                    ((0.18, 0.08), (-0.02, 0.34)),
+                    ((-0.02, 0.34), (-0.34, 0.34)),
+                    ((0.16, 0.08), (0.44, 0.30)),
+                ],
+            );
+            draw_scaled_segments(
+                center,
+                scale,
+                stroke * 0.72,
+                WHITE,
+                &[
+                    ((0.0, -0.55), (0.0, -0.34)),
+                    ((0.0, -0.34), (-0.14, -0.49)),
+                    ((0.0, -0.34), (0.14, -0.49)),
+                ],
+            );
+        }
+        ActionPictogram::Clap => {
+            let left_hand = vec2(center.x - scale * 0.12, center.y - scale * 0.05);
+            let right_hand = vec2(center.x + scale * 0.12, center.y - scale * 0.05);
+            draw_circle(left_hand.x, left_hand.y, scale * 0.14, color);
+            draw_circle(right_hand.x, right_hand.y, scale * 0.14, color);
+            draw_scaled_segments(
+                center,
+                scale,
+                stroke,
+                color,
+                &[((-0.54, 0.38), (-0.12, 0.03)), ((0.54, 0.38), (0.12, 0.03))],
+            );
+            draw_scaled_segments(
+                center,
+                scale,
+                stroke * 0.68,
+                WHITE,
+                &[
+                    ((0.0, -0.28), (0.0, -0.58)),
+                    ((-0.25, -0.20), (-0.45, -0.42)),
+                    ((0.25, -0.20), (0.45, -0.42)),
+                ],
+            );
+        }
+    }
+}
+
+fn draw_scaled_segments(
+    center: Vec2,
+    scale: f32,
+    stroke: f32,
+    color: Color,
+    segments: &[ScaledSegment],
+) {
+    for (from, to) in segments {
+        draw_line(
+            center.x + from.0 * scale,
+            center.y + from.1 * scale,
+            center.x + to.0 * scale,
+            center.y + to.1 * scale,
+            stroke,
+            color,
+        );
+    }
 }
 
 fn glow_rect(rect: Rect, color: Color) {
@@ -760,4 +1338,150 @@ fn mix_color(a: Color, b: Color, t: f32) -> Color {
         a.b + (b.b - a.b) * t,
         a.a + (b.a - a.a) * t,
     )
+}
+
+#[cfg(test)]
+mod action_cue_tests {
+    use super::*;
+
+    const VIEWPORTS: [(f32, f32); 3] = [(390.0, 844.0), (667.0, 375.0), (1440.0, 784.0)];
+
+    #[test]
+    fn every_hazard_has_a_distinct_shape_and_action_verb() {
+        let presentations = [
+            action_cue_presentation(RunnerHazard::LaneBlock),
+            action_cue_presentation(RunnerHazard::Hurdle),
+            action_cue_presentation(RunnerHazard::OverheadGate),
+            action_cue_presentation(RunnerHazard::BeatOrb),
+        ];
+
+        assert_eq!(presentations[0].verb, "DODGE");
+        assert_eq!(presentations[1].verb, "JUMP");
+        assert_eq!(presentations[2].verb, "SQUAT");
+        assert_eq!(presentations[3].verb, "CLAP");
+        for left in 0..presentations.len() {
+            for right in left + 1..presentations.len() {
+                assert_ne!(
+                    presentations[left].pictogram,
+                    presentations[right].pictogram
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn action_cue_stays_inside_camera_distance_viewports() {
+        for (width, height) in VIEWPORTS {
+            let bounds = Rect::new(0.0, 0.0, width, height);
+            let layout = action_cue_layout(bounds);
+
+            assert!(layout.panel.x >= bounds.x);
+            assert!(layout.panel.y >= bounds.y + 54.0);
+            assert!(layout.panel.x + layout.panel.w <= bounds.x + bounds.w);
+            assert!(layout.panel.y + layout.panel.h <= bounds.y + bounds.h);
+            assert!(layout.icon_scale >= 25.0);
+            assert!(layout.verb_font_size >= 25.0);
+            assert!(layout.lane_slots.x >= layout.panel.x);
+            assert!(layout.lane_slots.x + layout.lane_slots.w <= layout.panel.x + layout.panel.w);
+            assert!(
+                layout.proximity_rail.y + layout.proximity_rail.h
+                    <= layout.panel.y + layout.panel.h
+            );
+        }
+    }
+
+    #[test]
+    fn proximity_is_clamped_and_increases_toward_collision() {
+        assert_eq!(action_cue_proximity(ACTION_CUE_MAX_DISTANCE + 1.0), 0.0);
+        assert_eq!(action_cue_proximity(ACTION_CUE_MAX_DISTANCE), 0.0);
+        assert!(action_cue_proximity(0.4) > action_cue_proximity(0.7));
+        assert_eq!(action_cue_proximity(0.0), 1.0);
+        assert_eq!(action_cue_proximity(-1.0), 1.0);
+    }
+
+    #[test]
+    fn lane_labels_describe_obstacle_location_not_move_direction() {
+        assert_eq!(action_cue_lane_label(-1), "LEFT LANE");
+        assert_eq!(action_cue_lane_label(0), "CENTER LANE");
+        assert_eq!(action_cue_lane_label(1), "RIGHT LANE");
+    }
+
+    #[test]
+    fn feedback_events_have_distinct_shape_and_positive_recovery_copy() {
+        let dodge = feedback_presentation(RunnerFeedback::Dodge).expect("dodge feedback");
+        let crash = feedback_presentation(RunnerFeedback::Crash).expect("crash feedback");
+        let beat = feedback_presentation(RunnerFeedback::BeatPickup).expect("beat feedback");
+
+        assert_eq!(dodge.label, "NICE");
+        assert_eq!(crash.label, "NEXT");
+        assert_eq!(beat.label, "BEAT");
+        assert_ne!(dodge.glyph, crash.glyph);
+        assert_ne!(dodge.glyph, beat.glyph);
+        assert_ne!(crash.glyph, beat.glyph);
+        assert_eq!(feedback_presentation(RunnerFeedback::None), None);
+    }
+
+    #[test]
+    fn feedback_pulse_retains_one_frame_event_for_a_bounded_window() {
+        let mut stage = RunnerStage::default();
+        let mut game = RunnerGame::new();
+        game.feedback[0] = RunnerFeedback::Dodge;
+
+        stage.update(0.016, &game);
+        assert_eq!(stage.feedback_pulses[0].kind, RunnerFeedback::Dodge);
+        assert_eq!(stage.feedback_pulses[0].remaining, FEEDBACK_PULSE_SECONDS);
+
+        game.feedback[0] = RunnerFeedback::None;
+        stage.update(FEEDBACK_PULSE_SECONDS * 0.5, &game);
+        assert!(stage.feedback_pulses[0].is_visible());
+        assert!((stage.feedback_pulses[0].intensity() - 0.5).abs() < 0.001);
+
+        stage.update(FEEDBACK_PULSE_SECONDS, &game);
+        assert!(!stage.feedback_pulses[0].is_visible());
+        assert_eq!(stage.feedback_pulses[0].kind, RunnerFeedback::None);
+    }
+
+    #[test]
+    fn four_feedback_markers_fit_between_action_beacon_and_viewport_edges() {
+        for (width, height) in VIEWPORTS {
+            let bounds = Rect::new(0.0, 0.0, width, height);
+            let cue = action_cue_layout(bounds);
+            for count in 1..=4 {
+                let mut previous_right = bounds.x;
+                for index in 0..count {
+                    let marker = feedback_marker_layout(bounds, index, count);
+                    let left = marker.center.x - marker.radius;
+                    let right = marker.center.x + marker.radius;
+                    assert!(left >= bounds.x);
+                    assert!(right <= bounds.x + bounds.w);
+                    assert!(left >= previous_right);
+                    assert!(marker.center.y - marker.radius - 18.0 >= cue.panel.y + cue.panel.h);
+                    assert!(marker.label_baseline <= bounds.y + bounds.h);
+                    previous_right = right;
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn single_modes_show_only_truthful_player_slots() {
+        let mut game = RunnerGame::new();
+        assert_eq!(stage_player_visibility(&game), [true, false, false, false]);
+
+        game.players[1].evaluated = true;
+        game.players[3].evaluated = true;
+        assert_eq!(stage_player_visibility(&game), [true, true, false, true]);
+
+        game.mode = GameMode::BeatStrike;
+        assert_eq!(stage_player_visibility(&game), [true, true, false, true]);
+    }
+
+    #[test]
+    fn duo_keeps_two_required_slots_and_truthful_remote_presence() {
+        let mut game = RunnerGame::with_mode(GameMode::DuoGroove);
+        assert_eq!(stage_player_visibility(&game), [true, true, false, false]);
+
+        game.players[2].evaluated = true;
+        assert_eq!(stage_player_visibility(&game), [true, true, true, false]);
+    }
 }

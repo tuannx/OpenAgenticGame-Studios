@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "id": "example-catch",
+  "title": "Star Catcher",
+  "actions": [4, 8, 0],
+  "mechanic": "catch",
+  "scoring": {
+    "combo_step": 0.15,
+    "on_beat_bonus": 1.5,
+    "coop_bonus": 1.0
+  },
+  "pacing": {
+    "bpm": 120,
+    "session_seconds": 60,
+    "curve": "breath-arc"
+  },
+  "challenge": {
+    "spawn_interval": 1.2,
+    "speed_ramp": 1.5,
+    "difficulty": 0.5
+  },
+  "end": {
+    "mode": "time-based",
+    "lives": 0,
+    "goal_score": 0
+  },
+  "theme": {
+    "primary": 58879,
+    "secondary": 16728193,
+    "style": "neon"
+  }
+}

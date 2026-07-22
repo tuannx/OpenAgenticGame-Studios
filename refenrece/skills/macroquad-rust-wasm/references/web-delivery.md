@@ -49,6 +49,21 @@ Prefer copying `mq_js_bundle.js` from the Macroquad/miniquad source associated
 with the pinned crate version. A remote loader URL is acceptable for a quick
 prototype but is not a reproducible production dependency.
 
+### Image decoder compatibility
+
+Macroquad 0.4.15 depends on `image` with PNG and TGA features only. Its
+`load_texture()` helper detects JPEG bytes but calls an infallible texture
+constructor, so a shipped JPG can compile successfully and then panic in the
+browser. For canonical JPEG art, add the matching `image` 0.24.x dependency with
+`default-features = false, features = ["jpeg"]`, fetch bytes with `load_file`,
+decode using a fallibly configured `image::io::Reader`, validate that dimensions
+fit `u16`, bound encoded bytes plus decoder dimensions/allocation, and only then
+call `Texture2D::from_rgba8`.
+
+Record the release WASM size before and after enabling a decoder. Shared URLs
+avoid embedding image bytes, but decoder code still changes the binary and must
+be treated as a measured visual/performance tradeoff.
+
 Minimal HTML shell:
 
 ```html

@@ -105,6 +105,11 @@ async fn main() {
 ## Assets And Browser Boundary
 
 - Load assets through Macroquad's async APIs before entering dependent gameplay.
+- Macroquad 0.4.15 enables only PNG/TGA decoders by default. Loading a JPEG with
+  `load_texture()` can reach an internal panic because format detection succeeds
+  while JPEG support is absent. If canonical web art is JPEG, explicitly enable
+  `image`'s `jpeg` feature and decode through a fallible boundary before creating
+  `Texture2D`; cover this with a real-asset decode test and an HTTP browser load.
 - Keep asset paths relative and preserve their layout in the deployed bundle.
 - Serve `.html`, `.wasm`, JavaScript, and assets over HTTP; do not validate by
   opening `file://` directly.

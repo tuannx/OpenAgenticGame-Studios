@@ -18,7 +18,7 @@ Build motion games without weakening the distinction between a demonstrated body
    - `brainbreak/web/src/vision.ts`, `bridge.ts`, `audio.ts`, `network.ts`, and `main.ts`
    - `brainbreak/worker/src/index.ts`
 4. Read the active record under `openspec/changes/` for non-trivial or cross-layer work.
-5. Load [architecture-contract.md](references/architecture-contract.md) for layer or evaluation changes and [web-runtime-checklist.md](references/web-runtime-checklist.md) for browser or deployment work.
+5. Load [architecture-contract.md](references/architecture-contract.md), [web-runtime-checklist.md](references/web-runtime-checklist.md), and [taste-guide.md](references/taste-guide.md) for game design, experience taste, layer, or evaluation changes.
 
 ## Route the Change by Ownership
 
@@ -37,11 +37,20 @@ Do not move browser APIs, TensorFlow, networking transports, or Cloudflare types
 - Treat `brainbreak-core` as an engine-independent deterministic domain. Pass pose snapshots, evaluation flags, elapsed time, and action events into it.
 - Enforce camera-first evaluation inside the game runtime. Hiding a button or displaying a warning is not an evaluation boundary.
 - When a local player is not tracked, do not award score, combo, lives, hit/miss judgment, or outbound multiplayer actions for that player.
+- Keep camera status, HUD identities, and stage avatars on one participant-presence
+  contract. Single-player modes must not render unevaluated extra bodies; a mode
+  may reserve only the local slots it explicitly requires.
+- Give the active body/action lane and persistent player HUD separate spatial
+  ownership. Derive the running stage and passive HUD deck from one responsive
+  layout; do not solve occlusion by moving a fixed card into another playable lane.
 - Evaluate remote action events only while the peer is connected. Send evaluated action events, never camera video or pose landmarks.
 - Maintain stable tracked-player identities and independent recognizer state. Do not share calibration or temporal state between bodies.
 - Keep raw video and landmarks local to the browser unless a future privacy design explicitly changes the contract.
 - When changing JavaScript imports used by Rust, increment both the bridge plugin `version` in `web/src/bridge.ts` and `brainbreak_bridge_crate_version()` in Rust. Build and inspect the release WASM afterward.
 - Start camera and audio only from a user gesture. Preserve a clear guide-only state when permission is denied or disabled.
+- Make camera-start cancellation own the asynchronous request. Returning from a
+  Ready modal must abort UI publication and stop any MediaStream that resolves
+  after the user has already left.
 - Store distributable music locally, retain license and attribution evidence, disclose modifications, and serve a fingerprinted asset.
 - Clamp frame delta in the Macroquad loop and keep hot-loop effect storage bounded. The current reference clamp is `get_frame_time().min(0.05)`.
 - Set immutable caching only after confirming that the response is the expected non-HTML asset. Never cache a SPA HTML fallback as JavaScript, WASM, or audio.
@@ -97,5 +106,9 @@ Do not claim a higher level from evidence at a lower level. If browser access or
 - Do not transmit raw pose or camera data as a shortcut for multiplayer.
 - Do not silently change action thresholds without tests and calibration rationale.
 - Do not claim music is "copyright free" without a redistribution-compatible license record.
+- Do not render a decorative player slot that camera/evaluation state and the
+  selected mode cannot truthfully claim.
+- Do not overlay a persistent player card on the camera-backed runner body or
+  nearest action lane.
 - Do not use a successful Cargo build as browser-runtime proof.
 - Do not deploy from an unreviewed dirty tree or report production success without probing the live origin.

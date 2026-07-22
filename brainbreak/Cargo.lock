@@ -39,6 +39,7 @@ name = "brainbreak-game"
 version = "0.1.0"
 dependencies = [
  "brainbreak-core",
+ "image",
  "macroquad",
 ]
 

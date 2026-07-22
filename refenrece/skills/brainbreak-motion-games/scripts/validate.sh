@@ -25,6 +25,7 @@ npm --prefix "$project_dir" audit --audit-level=high
 dist_dir="$project_dir/web/dist"
 wasm_file="$(find "$dist_dir" -maxdepth 1 -type f -name 'brainbreak-game-*.wasm' -print -quit)"
 js_file="$(find "$dist_dir/assets" -maxdepth 1 -type f -name '*.js' -print -quit)"
+macroquad_loader="$dist_dir/mq_js_bundle.js"
 
 if [[ -z "$wasm_file" || ! "$(basename "$wasm_file")" =~ ^brainbreak-game-[a-f0-9]{12}\.wasm$ ]]; then
   echo "Missing fingerprinted BrainBreak WASM in: $dist_dir" >&2
@@ -32,6 +33,15 @@ if [[ -z "$wasm_file" || ! "$(basename "$wasm_file")" =~ ^brainbreak-game-[a-f0-
 fi
 if [[ -z "$js_file" ]]; then
   echo "Missing production JavaScript in: $dist_dir/assets" >&2
+  exit 1
+fi
+if [[ ! -f "$macroquad_loader" ]]; then
+  echo "Missing Macroquad browser loader in: $dist_dir" >&2
+  exit 1
+fi
+node --check "$macroquad_loader"
+if grep -Fq 'function(){function i(){}register_plugin=' "$macroquad_loader"; then
+  echo "Macroquad loader still contains the strict-mode quad_net declaration bug" >&2
   exit 1
 fi
 

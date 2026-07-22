@@ -1,4 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
+import { cacheControlForAsset } from './cache-policy';
 
 interface Env {
   ASSETS: Fetcher;
@@ -43,23 +44,8 @@ function securityHeaders(response: Response, pathname: string): Response {
     'content-security-policy',
     "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' https: wss:; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
   );
-  if (pathname.endsWith('.wasm')) {
-    output.headers.set('content-type', 'application/wasm');
-  }
-  const isHtml = output.headers.get('content-type')?.startsWith('text/html') ?? false;
-  if (isHtml) {
-    output.headers.set('cache-control', 'no-cache');
-  } else if (
-    pathname.startsWith('/assets/')
-    || /\/brainbreak-game-[a-f0-9]{12}\.wasm$/.test(pathname)
-    || /\/audio\/[a-z0-9-]+-[a-f0-9]{12}\.mp3$/.test(pathname)
-  ) {
-    output.headers.set('cache-control', 'public, max-age=31536000, immutable');
-  } else if (pathname.endsWith('.wasm') || pathname.endsWith('mq_js_bundle.js')) {
-    output.headers.set('cache-control', 'no-cache');
-  } else if (pathname === '/' || pathname.endsWith('.html')) {
-    output.headers.set('cache-control', 'no-cache');
-  }
+  const cacheControl = cacheControlForAsset(pathname, output.headers.get('content-type'), output.ok);
+  if (cacheControl) output.headers.set('cache-control', cacheControl);
   return output;
 }
 

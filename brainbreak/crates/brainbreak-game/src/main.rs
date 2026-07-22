@@ -1,37 +1,23 @@
 #[cfg(target_arch = "wasm32")]
-use brainbreak_core::Keypoint;
+mod config_render;
+mod hud;
+mod overlays;
+mod platform;
+mod supernova_render;
+mod visuals;
+
 use brainbreak_core::{
-    Action, MotionInputFrame, MotionRuntime, PoseFrame, RunnerFeedback, RunnerGame, RunnerPhase,
+    MotionInputFrame, MotionRuntime, RunnerFeedback, RunnerGame, RunnerPhase,
+    SupernovaGame, SupernovaOutcome, SupernovaPhase,
 };
+#[cfg(target_arch = "wasm32")]
+use brainbreak_core::{ConfigGame, RunnerOutcome};
 use macroquad::prelude::*;
 
-mod visuals;
-use visuals::{AudioVisual, RunnerStage, draw_round_panel};
-
 #[cfg(target_arch = "wasm32")]
-const POSE_BUFFER_BYTES: usize = 512;
-
-#[cfg(target_arch = "wasm32")]
-unsafe extern "C" {
-    fn bb_copy_pose(destination: *mut u8, capacity: u32) -> u32;
-    fn bb_take_remote_actions(player: u32) -> u32;
-    fn bb_send_local_action(player: u32, mask: u32);
-    fn bb_network_status() -> u32;
-    fn bb_take_gamepad_actions(player: u32) -> u32;
-    fn bb_evaluation_enabled(player: u32) -> u32;
-    fn bb_audio_beat_phase() -> f32;
-    fn bb_audio_pulse() -> f32;
-    fn bb_audio_energy() -> f32;
-    fn bb_audio_playing() -> u32;
-    fn bb_reduce_motion() -> u32;
-    fn bb_play_feedback(kind: u32);
-}
-
-#[cfg(target_arch = "wasm32")]
-#[unsafe(no_mangle)]
-pub extern "C" fn brainbreak_bridge_crate_version() -> u32 {
-    3
-}
+use config_render::ConfigStage;
+use supernova_render::SupernovaStage;
+use visuals::RunnerStage;
 
 fn window_conf() -> Conf {
     Conf {
@@ -45,155 +31,15 @@ fn window_conf() -> Conf {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
-fn read_u32(bytes: &[u8], cursor: &mut usize) -> Option<u32> {
-    let value = u32::from_le_bytes(bytes.get(*cursor..*cursor + 4)?.try_into().ok()?);
-    *cursor += 4;
-    Some(value)
-}
-
-#[cfg(target_arch = "wasm32")]
-fn read_f32(bytes: &[u8], cursor: &mut usize) -> Option<f32> {
-    let value = f32::from_le_bytes(bytes.get(*cursor..*cursor + 4)?.try_into().ok()?);
-    *cursor += 4;
-    Some(value)
-}
-
-#[cfg(target_arch = "wasm32")]
-fn read_f64(bytes: &[u8], cursor: &mut usize) -> Option<f64> {
-    let value = f64::from_le_bytes(bytes.get(*cursor..*cursor + 8)?.try_into().ok()?);
-    *cursor += 8;
-    Some(value)
-}
-
-#[cfg(target_arch = "wasm32")]
-fn browser_poses() -> Vec<PoseFrame> {
-    let mut bytes = [0_u8; POSE_BUFFER_BYTES];
-    let written = unsafe { bb_copy_pose(bytes.as_mut_ptr(), bytes.len() as u32) } as usize;
-    if written < 16 || written > bytes.len() {
-        return Vec::new();
-    }
-    let mut cursor = 0;
-    if read_u32(&bytes[..written], &mut cursor) != Some(1) {
-        return Vec::new();
-    }
-    let count = read_u32(&bytes[..written], &mut cursor).unwrap_or(0).min(2);
-    let timestamp_ms = read_f64(&bytes[..written], &mut cursor).unwrap_or(0.0);
-    let mut poses = Vec::with_capacity(count as usize);
-    for _ in 0..count {
-        let Some(tracked_id) = read_u32(&bytes[..written], &mut cursor) else {
-            break;
-        };
-        let Some(quality) = read_f32(&bytes[..written], &mut cursor) else {
-            break;
-        };
-        let mut keypoints = [Keypoint::default(); 17];
-        let mut complete = true;
-        for keypoint in &mut keypoints {
-            let Some(x) = read_f32(&bytes[..written], &mut cursor) else {
-                complete = false;
-                break;
-            };
-            let Some(y) = read_f32(&bytes[..written], &mut cursor) else {
-                complete = false;
-                break;
-            };
-            let Some(confidence) = read_f32(&bytes[..written], &mut cursor) else {
-                complete = false;
-                break;
-            };
-            *keypoint = Keypoint { x, y, confidence };
-        }
-        if complete {
-            poses.push(PoseFrame {
-                tracked_id,
-                quality,
-                timestamp_ms,
-                keypoints,
-            });
-        }
-    }
-    poses
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn browser_poses() -> Vec<PoseFrame> {
-    Vec::new()
-}
-
-fn keyboard_actions(restart: bool) -> u32 {
-    let mut mask = 0;
-    if is_key_pressed(KeyCode::Left) || is_key_pressed(KeyCode::A) {
-        mask |= Action::MoveLeft.mask();
-    }
-    if is_key_pressed(KeyCode::Right) || is_key_pressed(KeyCode::D) {
-        mask |= Action::MoveRight.mask();
-    }
-    if is_key_pressed(KeyCode::Space) || is_key_pressed(KeyCode::W) {
-        mask |= Action::Jump.mask();
-    }
-    if is_key_pressed(KeyCode::Down) || is_key_pressed(KeyCode::S) {
-        mask |= Action::Squat.mask();
-    }
-    if is_key_pressed(KeyCode::C)
-        || is_key_pressed(KeyCode::Enter)
-        || (restart && is_key_pressed(KeyCode::R))
+/// Returns true when the JS bridge (or native Tab key) selects Supernova mode (value 3).
+fn is_supernova_mode() -> bool {
+    #[cfg(target_arch = "wasm32")]
     {
-        mask |= Action::Clap.mask();
+        platform::raw_game_mode() == 3
     }
-    mask
-}
-
-fn network_status() -> u32 {
-    #[cfg(target_arch = "wasm32")]
-    return unsafe { bb_network_status() };
-    #[cfg(not(target_arch = "wasm32"))]
-    return 0;
-}
-
-fn evaluation_enabled(_player: u32) -> bool {
-    #[cfg(target_arch = "wasm32")]
-    return unsafe { bb_evaluation_enabled(_player) != 0 };
-    #[cfg(not(target_arch = "wasm32"))]
-    false
-}
-
-fn reduce_motion() -> bool {
-    #[cfg(target_arch = "wasm32")]
-    return unsafe { bb_reduce_motion() != 0 };
-    #[cfg(not(target_arch = "wasm32"))]
-    false
-}
-
-fn audio_visual() -> AudioVisual {
-    #[cfg(target_arch = "wasm32")]
-    return unsafe {
-        AudioVisual {
-            phase: bb_audio_beat_phase().clamp(0.0, 1.0),
-            pulse: bb_audio_pulse().clamp(0.0, 1.0),
-            energy: bb_audio_energy().clamp(0.0, 1.0),
-            playing: bb_audio_playing() != 0,
-        }
-    };
     #[cfg(not(target_arch = "wasm32"))]
     {
-        let phase = ((get_time() as f32) * 126.0 / 60.0).fract();
-        let distance = phase.min(1.0 - phase);
-        AudioVisual {
-            phase,
-            pulse: (-distance * 13.0).exp(),
-            energy: 0.18,
-            playing: false,
-        }
-    }
-}
-
-fn player_color(player: usize) -> Color {
-    match player {
-        0 => Color::from_rgba(34, 211, 238, 255),
-        1 => Color::from_rgba(196, 181, 253, 255),
-        2 => Color::from_rgba(251, 191, 36, 255),
-        _ => Color::from_rgba(52, 211, 153, 255),
+        is_key_down(KeyCode::Tab)
     }
 }
 
@@ -202,26 +48,67 @@ async fn main() {
     let mut motion = MotionRuntime::default();
     let mut runner = RunnerGame::new();
     let mut stage = RunnerStage::default();
+    let mode_art = platform::ModeArt::load().await;
+    #[cfg(not(target_arch = "wasm32"))]
+    let mut selected_mode = platform::current_game_mode();
+
+    // Supernova Drop state
+    let mut supernova = SupernovaGame::new();
+    let mut supernova_stage = SupernovaStage::default();
+    let mut supernova_started = false;
+    // Party event tracking (music/voice cues to JS).
+    let mut snova_phase_sent = SupernovaPhase::Ready;
+    let mut snova_countdown_sent: u8 = u8::MAX;
+
+    // Custom config-driven game state
+    #[cfg(target_arch = "wasm32")]
+    let mut custom_config: Option<brainbreak_core::GameConfig> = None;
+    #[cfg(target_arch = "wasm32")]
+    let mut custom_game: Option<ConfigGame> = None;
+    #[cfg(target_arch = "wasm32")]
+    let mut custom_stage = ConfigStage::default();
+    #[cfg(target_arch = "wasm32")]
+    let mut custom_started = false;
 
     loop {
         let dt = get_frame_time().min(0.05);
-        let poses = browser_poses();
-        let network = network_status();
-        let local_evaluation = [evaluation_enabled(0), evaluation_enabled(1)];
+        #[cfg(target_arch = "wasm32")]
+        let desired_mode = platform::current_game_mode();
+        #[cfg(not(target_arch = "wasm32"))]
+        let desired_mode = selected_mode;
+        if motion.game.mode != desired_mode {
+            motion.set_mode(desired_mode);
+            runner.set_mode(desired_mode);
+        }
+        let poses = platform::browser_poses();
+        let network = platform::network_status();
+        let local_evaluation = [
+            platform::evaluation_enabled(0),
+            platform::evaluation_enabled(1),
+        ];
         let guide_only = !local_evaluation.into_iter().any(|enabled| enabled);
         #[cfg(target_arch = "wasm32")]
-        let (fallback_actions, remote_actions) = unsafe {
-            let mut fallback = [keyboard_actions(runner.phase == RunnerPhase::GameOver), 0];
-            fallback[0] |= bb_take_gamepad_actions(0);
-            fallback[1] |= bb_take_gamepad_actions(1);
+        let (fallback_actions, remote_actions) = {
+            let mut fallback = [
+                platform::keyboard_actions(runner.phase == RunnerPhase::GameOver),
+                0,
+            ];
+            fallback[0] |= platform::take_gamepad_actions(0);
+            fallback[1] |= platform::take_gamepad_actions(1);
             (
                 fallback,
-                [bb_take_remote_actions(0), bb_take_remote_actions(1)],
+                [
+                    platform::take_remote_actions(0),
+                    platform::take_remote_actions(1),
+                ],
             )
         };
         #[cfg(not(target_arch = "wasm32"))]
         let (fallback_actions, remote_actions) = (
-            [keyboard_actions(runner.phase == RunnerPhase::GameOver), 0],
+            [
+                platform::keyboard_actions(runner.phase == RunnerPhase::GameOver),
+                0,
+            ],
             [0, 0],
         );
 
@@ -241,11 +128,9 @@ async fn main() {
             },
         );
         #[cfg(target_arch = "wasm32")]
-        unsafe {
-            for (player, mask) in motion.local_evaluated_triggered().into_iter().enumerate() {
-                if mask != 0 {
-                    bb_send_local_action(player as u32, mask);
-                }
+        for (player, mask) in motion.local_evaluated_triggered().into_iter().enumerate() {
+            if mask != 0 {
+                platform::send_local_action(player as u32, mask);
             }
         }
 
@@ -258,27 +143,148 @@ async fn main() {
             }
         });
         let evaluation = motion.players.map(|player| player.evaluation_enabled);
-        runner.update(dt, active, triggered, evaluation);
-        #[cfg(target_arch = "wasm32")]
-        unsafe {
-            for feedback in runner.feedback {
-                let kind = match feedback {
-                    RunnerFeedback::None => 0,
-                    RunnerFeedback::Dodge => 1,
-                    RunnerFeedback::Crash => 2,
-                    RunnerFeedback::BeatPickup => 3,
-                };
-                if kind != 0 {
-                    bb_play_feedback(kind);
+
+        // --- Supernova Drop mode (bypasses runner entirely) ---
+        if is_supernova_mode() {
+            // Auto-start when at least one player is detected.
+            if !supernova_started && active.iter().any(|a| *a != 0) {
+                supernova.start_run(evaluation);
+                supernova_started = true;
+            }
+            // Handle replay from result screen.
+            if supernova.phase == SupernovaPhase::Result {
+                let any_action = triggered.iter().any(|t| *t != 0);
+                if any_action && supernova.request_replay() {
+                    supernova_started = true;
                 }
+            }
+            supernova.update(dt, active, triggered);
+
+            // Emit party events (music/voice cues) to the JS party director.
+            // Phase-change block runs first so entering Countdown resets the
+            // countdown tracker (avoids double-sending the first tick).
+            if supernova.phase != snova_phase_sent {
+                let event = match supernova.phase {
+                    SupernovaPhase::Dance => Some(2),
+                    SupernovaPhase::Freeze => Some(3),
+                    SupernovaPhase::Drop => Some(5),
+                    SupernovaPhase::Result => Some(6),
+                    _ => None,
+                };
+                if let Some(kind) = event {
+                    let value = if supernova.phase == SupernovaPhase::Result {
+                        match supernova.outcome {
+                            Some(SupernovaOutcome::FullSupernova) => 0,
+                            _ => 1,
+                        }
+                    } else {
+                        0
+                    };
+                    platform::supernova_event(kind, value);
+                }
+                if supernova.phase == SupernovaPhase::Countdown {
+                    snova_countdown_sent = u8::MAX;
+                }
+                snova_phase_sent = supernova.phase;
+            }
+            if supernova.phase == SupernovaPhase::Countdown {
+                let num = supernova.countdown_remaining.ceil() as u8;
+                if num != snova_countdown_sent && num >= 1 {
+                    snova_countdown_sent = num;
+                    platform::supernova_event(1, u32::from(num));
+                }
+            }
+            if supernova.perfect_freeze {
+                platform::supernova_event(4, 0);
+            }
+
+            let audio = platform::audio_visual();
+            let reduced = platform::reduce_motion();
+            supernova_stage.update(dt, &supernova, audio, reduced);
+
+            clear_background(Color::from_rgba(4, 5, 20, 255));
+            supernova_stage.draw(&supernova, audio, reduced);
+            next_frame().await;
+            continue;
+        }
+        supernova_started = false;
+
+        // --- Custom config-driven game (mode 4, bypasses runner) ---
+        #[cfg(target_arch = "wasm32")]
+        if platform::raw_game_mode() == 4 {
+            // Lazy-load config on first entry.
+            if custom_config.is_none() {
+                custom_config = platform::load_game_config();
+                custom_game = custom_config.as_ref().map(ConfigGame::new);
+            }
+            if let (Some(cfg), Some(game)) = (&custom_config, &mut custom_game) {
+                // Auto-start when at least one player is detected.
+                if !custom_started && active.iter().any(|a| *a != 0) {
+                    game.start_run(cfg, evaluation);
+                    custom_started = true;
+                }
+                // Handle replay from result screen.
+                if game.phase == brainbreak_core::ConfigPhase::Result {
+                    let any_action = triggered.iter().any(|t| *t != 0);
+                    if any_action {
+                        game.request_replay(cfg);
+                    }
+                }
+                game.update(dt, cfg, triggered);
+                custom_stage.update(dt, game);
+                custom_stage.draw(game, cfg);
+                next_frame().await;
+                continue;
+            }
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            custom_config = None;
+            custom_game = None;
+            custom_started = false;
+        }
+
+        runner.update(dt, active, triggered, evaluation);
+        if let Some(result) = runner.take_result_event() {
+            #[cfg(target_arch = "wasm32")]
+            {
+                let outcome = match result.outcome {
+                    RunnerOutcome::BreakComplete => 1,
+                    RunnerOutcome::EnergySpent => 2,
+                };
+                platform::record_run_outcome(platform::game_mode_value(result.mode), outcome);
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            let _ = result;
+        }
+        if let Some(next_mode) = runner.take_next_run_request() {
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                selected_mode = next_mode;
+            }
+            motion.set_mode(next_mode);
+            runner.start_run(next_mode, evaluation);
+            #[cfg(target_arch = "wasm32")]
+            platform::set_game_mode(platform::game_mode_value(next_mode));
+        }
+        #[cfg(target_arch = "wasm32")]
+        for (player, feedback) in runner.feedback.into_iter().enumerate() {
+            let kind = match feedback {
+                RunnerFeedback::None => 0,
+                RunnerFeedback::Dodge => 1,
+                RunnerFeedback::Crash => 2,
+                RunnerFeedback::BeatPickup => 3,
+            };
+            if kind != 0 {
+                platform::play_feedback(kind, u32::from(runner.players[player].combo));
             }
         }
         stage.update(dt, &runner);
 
         let width = screen_width();
         let height = screen_height();
-        let audio = audio_visual();
-        let reduced = reduce_motion();
+        let audio = platform::audio_visual();
+        let reduced = platform::reduce_motion();
         let shake = if reduced {
             Vec2::ZERO
         } else {
@@ -293,194 +299,646 @@ async fn main() {
             }
         };
         clear_background(Color::from_rgba(4, 5, 20, 255));
-        let world_bounds = Rect::new(shake.x, shake.y, width, height);
+        let running_surface = (runner.phase == RunnerPhase::Running).then(|| {
+            hud::running_surface_layout(
+                width,
+                height,
+                hud::displayed_player_count(&runner, network),
+            )
+        });
+        let stage_bounds = running_surface
+            .map(|layout| layout.stage)
+            .unwrap_or(Rect::new(0.0, 0.0, width, height));
+        let world_bounds = Rect::new(
+            stage_bounds.x + shake.x,
+            stage_bounds.y + shake.y,
+            stage_bounds.w,
+            stage_bounds.h,
+        );
         stage.draw(&runner, &motion, world_bounds, audio, reduced);
-        draw_header(width, audio, guide_only);
-        draw_player_hud(width, height, &runner, network);
-        draw_phase_overlay(width, height, &runner, guide_only, poses.len());
-        draw_beat_meter(width, height, audio);
+        if let Some(layout) = running_surface {
+            hud::draw_hud_deck(layout.deck);
+        }
+        hud::draw_header(width, &runner, guide_only);
+        if let Some(layout) = running_surface {
+            hud::draw_player_hud(&runner, layout.hud);
+        }
+        overlays::draw_phase_overlay(width, height, &runner, guide_only, poses.len(), &mode_art);
+        if running_surface.is_some() {
+            hud::draw_session_meter(width, runner.run_progress(), audio);
+        }
 
         next_frame().await;
     }
 }
 
-fn draw_header(width: f32, audio: AudioVisual, guide_only: bool) {
-    let margin = (width * 0.03).max(18.0);
-    draw_text(
-        "NEON",
-        margin,
-        36.0,
-        18.0,
-        Color::from_rgba(103, 232, 249, 255),
-    );
-    draw_text("BEAT RUNNER", margin, 65.0, 29.0, WHITE);
-    let state = if guide_only {
-        "GUIDANCE ONLY"
-    } else if audio.playing {
-        "126 BPM / LIVE"
-    } else {
-        "126 BPM / VISUAL CLOCK"
-    };
-    let size = measure_text(state, None, 14, 1.0);
-    draw_text(
-        state,
-        width - margin - size.width,
-        34.0,
-        14.0,
-        if guide_only {
-            Color::from_rgba(253, 230, 138, 255)
-        } else {
-            Color::from_rgba(196, 181, 253, 255)
-        },
-    );
-}
+#[cfg(test)]
+mod layout_tests {
+    use brainbreak_core::{GameMode, PLAYER_CAPACITY, RunnerGame, RunnerOutcome};
+    use macroquad::prelude::*;
 
-fn draw_player_hud(width: f32, height: f32, runner: &RunnerGame, network: u32) {
-    let displayed = if network >= 2 {
-        4
-    } else {
-        runner
-            .players
-            .iter()
-            .take(2)
-            .filter(|player| player.evaluated)
-            .count()
-            .max(1)
+    use crate::hud::{
+        STAGE_HUD_GAP, hud_combo_visible, life_pip_layout, player_hud_layout,
+        running_surface_layout, session_meter_layout,
     };
-    let card_width = if width < 700.0 { 142.0 } else { 174.0 };
-    let gap = 10.0;
-    let total = displayed as f32 * card_width + (displayed.saturating_sub(1)) as f32 * gap;
-    let start_x = (width - total) * 0.5;
-    let y = height - if height < 620.0 { 72.0 } else { 86.0 };
-    for player in 0..displayed {
-        let state = runner.players[player];
-        let x = start_x + player as f32 * (card_width + gap);
-        draw_round_panel(
-            Rect::new(x, y, card_width, 58.0),
-            Color::new(0.025, 0.035, 0.11, 0.88),
-        );
-        draw_rectangle(x, y, 4.0, 58.0, player_color(player));
-        draw_text(
-            format!("P{}  {:05}", player + 1, state.score),
-            x + 14.0,
-            y + 24.0,
-            17.0,
-            if state.evaluated {
-                WHITE
-            } else {
-                Color::from_rgba(148, 163, 184, 255)
-            },
-        );
-        let detail = if state.evaluated {
-            format!("LIVES {}   COMBO x{}", state.lives, state.combo)
-        } else {
-            "NO CAMERA / NO SCORE".to_owned()
-        };
-        draw_text(&detail, x + 14.0, y + 45.0, 11.0, player_color(player));
-    }
-}
+    use crate::overlays::{
+        COUNTDOWN_TICK_COUNT, CountdownNumeral, MotionFigure, countdown_active_ticks,
+        countdown_overlay_layout, countdown_presentation, countdown_strokes, cover_source_rect,
+        motion_figure_bounds, motion_prompt_layout, pause_overlay_layout, pause_presentation,
+        ready_presentation, result_chip_rect, result_choices, result_duo_available,
+        result_indicator_layout, result_layout, result_title, tracking_hold_presentation,
+    };
+    use crate::platform::{
+        DUO_ART_PATH, MIRROR_ART_PATH, MODE_ART_MAX_ENCODED_BYTES, ModeArt, STRIKE_ART_PATH,
+        decode_mode_art,
+    };
 
-fn draw_phase_overlay(
-    width: f32,
-    height: f32,
-    runner: &RunnerGame,
-    guide_only: bool,
-    tracked_players: usize,
-) {
-    if runner.phase == RunnerPhase::Running && !guide_only {
-        return;
+    const VIEWPORTS: [(f32, f32); 3] = [(390.0, 844.0), (667.0, 375.0), (1440.0, 784.0)];
+
+    fn player_flags(p1: bool, p2: bool) -> [bool; PLAYER_CAPACITY] {
+        [p1, p2, false, false]
     }
-    let panel_width = width.min(560.0) * 0.86;
-    let panel_height = if runner.phase == RunnerPhase::GameOver {
-        188.0
-    } else {
-        132.0
-    };
-    let panel = Rect::new(
-        (width - panel_width) * 0.5,
-        height * 0.48 - panel_height * 0.5,
-        panel_width,
-        panel_height,
-    );
-    draw_round_panel(panel, Color::new(0.015, 0.02, 0.09, 0.9));
-    draw_rectangle_lines(
-        panel.x,
-        panel.y,
-        panel.w,
-        panel.h,
-        2.0,
-        Color::new(0.45, 0.32, 0.95, 0.62),
-    );
-    let (title, subtitle, color) = if runner.phase == RunnerPhase::GameOver {
-        let score = runner
-            .players
-            .iter()
-            .map(|player| player.score)
-            .max()
-            .unwrap_or(0);
-        (
-            "RUN COMPLETE".to_owned(),
-            format!("SCORE {score}  /  CLAP TO RUN AGAIN"),
-            Color::from_rgba(251, 113, 133, 255),
-        )
-    } else if guide_only {
-        (
-            "CAMERA REQUIRED TO SCORE".to_owned(),
-            "Enable motion to steer, jump, squat and clap".to_owned(),
-            Color::from_rgba(253, 230, 138, 255),
-        )
-    } else if tracked_players == 0 {
-        (
-            "STEP INTO THE FRAME".to_owned(),
-            "Your neon runner mirrors your body".to_owned(),
-            Color::from_rgba(103, 232, 249, 255),
-        )
-    } else {
-        (
-            "LOCKING ON".to_owned(),
-            "Stand tall - first obstacle incoming".to_owned(),
-            Color::from_rgba(103, 232, 249, 255),
-        )
-    };
-    let title_size = measure_text(&title, None, 30, 1.0);
-    draw_text(
-        &title,
-        panel.x + (panel.w - title_size.width) * 0.5,
-        panel.y + 52.0,
-        30.0,
-        color,
-    );
-    let subtitle_size = measure_text(&subtitle, None, 16, 1.0);
-    draw_text(
-        &subtitle,
-        panel.x + (panel.w - subtitle_size.width) * 0.5,
-        panel.y + 84.0,
-        16.0,
-        Color::from_rgba(226, 232, 240, 255),
-    );
-    if runner.phase == RunnerPhase::GameOver {
-        let hint = "LEFT/RIGHT = LEAN  /  JUMP  /  SQUAT  /  CLAP";
-        let hint_size = measure_text(hint, None, 12, 1.0);
-        draw_text(
-            hint,
-            panel.x + (panel.w - hint_size.width) * 0.5,
-            panel.y + 126.0,
-            12.0,
-            Color::from_rgba(148, 163, 184, 255),
+
+    #[test]
+    fn ready_presentation_preserves_runtime_truth_with_static_ascii_copy() {
+        let cases = [
+            (
+                ready_presentation(GameMode::MirrorBeat, true, 0, false, false),
+                "CAMERA NEEDED",
+                [MotionFigure::Camera, MotionFigure::Hidden],
+            ),
+            (
+                ready_presentation(GameMode::MirrorBeat, false, 0, false, false),
+                "STEP INTO FRAME",
+                [MotionFigure::Searching, MotionFigure::Hidden],
+            ),
+            (
+                ready_presentation(GameMode::MirrorBeat, false, 1, false, false),
+                "READY TO MOVE",
+                [MotionFigure::Present, MotionFigure::Hidden],
+            ),
+            (
+                ready_presentation(GameMode::MirrorBeat, false, 1, true, false),
+                "SIGNAL RECEIVED",
+                [MotionFigure::Ready, MotionFigure::Hidden],
+            ),
+            (
+                ready_presentation(GameMode::DuoGroove, false, 1, false, false),
+                "PLAYER 1 FOUND",
+                [MotionFigure::Present, MotionFigure::Searching],
+            ),
+            (
+                ready_presentation(GameMode::DuoGroove, false, 1, true, false),
+                "PLAYER 1 READY",
+                [MotionFigure::Ready, MotionFigure::Searching],
+            ),
+            (
+                ready_presentation(GameMode::DuoGroove, false, 2, false, false),
+                "DUO READY CHECK",
+                [MotionFigure::Present, MotionFigure::Present],
+            ),
+            (
+                ready_presentation(GameMode::DuoGroove, false, 2, true, false),
+                "PLAYER 1 READY",
+                [MotionFigure::Ready, MotionFigure::Present],
+            ),
+            (
+                ready_presentation(GameMode::DuoGroove, false, 2, false, true),
+                "PLAYER 2 READY",
+                [MotionFigure::Present, MotionFigure::Ready],
+            ),
+            (
+                ready_presentation(GameMode::DuoGroove, false, 2, true, true),
+                "BOTH PLAYERS READY",
+                [MotionFigure::Ready, MotionFigure::Ready],
+            ),
+        ];
+
+        for (presentation, title, figures) in cases {
+            assert_eq!(presentation.title, title);
+            assert_eq!(presentation.figures, figures);
+            assert!(presentation.title.is_ascii());
+            assert!(presentation.instruction.is_ascii());
+            assert!(presentation.title.len() <= 20);
+            assert!(presentation.instruction.len() <= 25);
+        }
+    }
+
+    #[test]
+    fn tracking_hold_presentation_preserves_required_player_truth() {
+        let remote_only = [false, false, true, true];
+        let remote_ready = [false, false, true, false];
+        let cases = [
+            (
+                tracking_hold_presentation(
+                    GameMode::MirrorBeat,
+                    player_flags(false, false),
+                    player_flags(false, false),
+                ),
+                "FIND YOUR FRAME",
+                [MotionFigure::Searching, MotionFigure::Hidden],
+            ),
+            (
+                tracking_hold_presentation(
+                    GameMode::MirrorBeat,
+                    player_flags(true, false),
+                    player_flags(false, false),
+                ),
+                "TRACKING RESTORED",
+                [MotionFigure::Present, MotionFigure::Hidden],
+            ),
+            (
+                tracking_hold_presentation(GameMode::MirrorBeat, remote_only, remote_ready),
+                "SIGNAL RECEIVED",
+                [MotionFigure::Ready, MotionFigure::Hidden],
+            ),
+            (
+                tracking_hold_presentation(
+                    GameMode::DuoGroove,
+                    remote_only,
+                    [false; PLAYER_CAPACITY],
+                ),
+                "FIND BOTH PLAYERS",
+                [MotionFigure::Searching, MotionFigure::Searching],
+            ),
+            (
+                tracking_hold_presentation(
+                    GameMode::DuoGroove,
+                    player_flags(true, false),
+                    player_flags(false, false),
+                ),
+                "PLAYER 1 FOUND",
+                [MotionFigure::Present, MotionFigure::Searching],
+            ),
+            (
+                tracking_hold_presentation(
+                    GameMode::DuoGroove,
+                    player_flags(false, true),
+                    player_flags(false, true),
+                ),
+                "PLAYER 2 READY",
+                [MotionFigure::Searching, MotionFigure::Ready],
+            ),
+            (
+                tracking_hold_presentation(
+                    GameMode::DuoGroove,
+                    player_flags(true, true),
+                    player_flags(false, false),
+                ),
+                "TRACKING RESTORED",
+                [MotionFigure::Present, MotionFigure::Present],
+            ),
+            (
+                tracking_hold_presentation(
+                    GameMode::DuoGroove,
+                    player_flags(true, true),
+                    player_flags(true, false),
+                ),
+                "PLAYER 1 READY",
+                [MotionFigure::Ready, MotionFigure::Present],
+            ),
+            (
+                tracking_hold_presentation(
+                    GameMode::DuoGroove,
+                    player_flags(true, true),
+                    player_flags(false, true),
+                ),
+                "PLAYER 2 READY",
+                [MotionFigure::Present, MotionFigure::Ready],
+            ),
+            (
+                tracking_hold_presentation(
+                    GameMode::DuoGroove,
+                    player_flags(true, true),
+                    player_flags(true, true),
+                ),
+                "BOTH PLAYERS READY",
+                [MotionFigure::Ready, MotionFigure::Ready],
+            ),
+        ];
+
+        for (presentation, title, figures) in cases {
+            assert_eq!(presentation.title, title);
+            assert_eq!(presentation.figures, figures);
+            assert!(!presentation.title.contains("PAUSED"));
+            assert!(presentation.title.is_ascii());
+            assert!(presentation.instruction.is_ascii());
+            assert!(presentation.title.len() <= 20);
+            assert!(presentation.instruction.len() <= 25);
+        }
+    }
+
+    #[test]
+    fn pause_presentation_requires_frame_before_clap_and_preserves_player_truth() {
+        let remote_only = [false, false, true, true];
+        let remote_ready = [false, false, true, false];
+        let cases = [
+            (
+                pause_presentation(
+                    GameMode::MirrorBeat,
+                    [false; PLAYER_CAPACITY],
+                    [false; PLAYER_CAPACITY],
+                ),
+                "STEP BACK INTO FRAME",
+                [MotionFigure::Searching, MotionFigure::Hidden],
+            ),
+            (
+                pause_presentation(
+                    GameMode::MirrorBeat,
+                    player_flags(true, false),
+                    [false; PLAYER_CAPACITY],
+                ),
+                "CLAP TO RESUME",
+                [MotionFigure::Present, MotionFigure::Hidden],
+            ),
+            (
+                pause_presentation(GameMode::MirrorBeat, remote_only, remote_ready),
+                "GET READY",
+                [MotionFigure::Ready, MotionFigure::Hidden],
+            ),
+            (
+                pause_presentation(GameMode::DuoGroove, remote_only, [false; PLAYER_CAPACITY]),
+                "BOTH STEP BACK INTO FRAME",
+                [MotionFigure::Searching, MotionFigure::Searching],
+            ),
+            (
+                pause_presentation(
+                    GameMode::DuoGroove,
+                    player_flags(true, false),
+                    player_flags(false, false),
+                ),
+                "PLAYER 2 BACK IN FRAME",
+                [MotionFigure::Present, MotionFigure::Searching],
+            ),
+            (
+                pause_presentation(
+                    GameMode::DuoGroove,
+                    player_flags(false, true),
+                    player_flags(false, true),
+                ),
+                "PLAYER 1 BACK IN FRAME",
+                [MotionFigure::Searching, MotionFigure::Ready],
+            ),
+            (
+                pause_presentation(
+                    GameMode::DuoGroove,
+                    player_flags(true, true),
+                    player_flags(false, false),
+                ),
+                "BOTH CLAP TO RESUME",
+                [MotionFigure::Present, MotionFigure::Present],
+            ),
+            (
+                pause_presentation(
+                    GameMode::DuoGroove,
+                    player_flags(true, true),
+                    player_flags(true, false),
+                ),
+                "PLAYER 2 CLAP TO RESUME",
+                [MotionFigure::Ready, MotionFigure::Present],
+            ),
+            (
+                pause_presentation(
+                    GameMode::DuoGroove,
+                    player_flags(true, true),
+                    player_flags(false, true),
+                ),
+                "PLAYER 1 CLAP TO RESUME",
+                [MotionFigure::Present, MotionFigure::Ready],
+            ),
+            (
+                pause_presentation(
+                    GameMode::DuoGroove,
+                    player_flags(true, true),
+                    player_flags(true, true),
+                ),
+                "GET READY",
+                [MotionFigure::Ready, MotionFigure::Ready],
+            ),
+        ];
+
+        for (presentation, instruction, figures) in cases {
+            assert_eq!(presentation.title, "PAUSED");
+            assert_eq!(presentation.instruction, instruction);
+            assert_eq!(presentation.figures, figures);
+            assert!(presentation.instruction.is_ascii());
+            assert!(!presentation.instruction.contains('•'));
+            assert!(presentation.instruction.len() <= 25);
+        }
+    }
+
+    #[test]
+    fn countdown_presentation_is_bounded_and_resets_once_between_two_and_one() {
+        let cases = [
+            (2.5, CountdownNumeral::Two, 1.0, 12),
+            (2.0, CountdownNumeral::Two, 1.0, 12),
+            (1.5, CountdownNumeral::Two, 0.5, 6),
+            (1.01, CountdownNumeral::Two, 0.01, 1),
+            (1.0, CountdownNumeral::One, 1.0, 12),
+            (0.5, CountdownNumeral::One, 0.5, 6),
+            (0.01, CountdownNumeral::One, 0.01, 1),
+            (0.0, CountdownNumeral::One, 0.0, 0),
+            (-1.0, CountdownNumeral::One, 0.0, 0),
+            (f32::NAN, CountdownNumeral::One, 0.0, 0),
+            (f32::INFINITY, CountdownNumeral::One, 0.0, 0),
+        ];
+
+        for (remaining, numeral, fraction, ticks) in cases {
+            let presentation = countdown_presentation(remaining);
+            assert_eq!(presentation.numeral, numeral);
+            assert!((presentation.second_fraction - fraction).abs() < 0.001);
+            assert_eq!(countdown_active_ticks(presentation.second_fraction), ticks);
+        }
+        assert_eq!(countdown_active_ticks(f32::NAN), 0);
+        assert_eq!(countdown_active_ticks(-1.0), 0);
+        assert_eq!(countdown_active_ticks(2.0), COUNTDOWN_TICK_COUNT);
+    }
+
+    #[test]
+    fn countdown_numerals_use_distinct_bounded_vector_strokes() {
+        let (two_strokes, two_count) = countdown_strokes(CountdownNumeral::Two);
+        let (one_strokes, one_count) = countdown_strokes(CountdownNumeral::One);
+        assert_eq!(two_count, 5);
+        assert_eq!(one_count, 3);
+        assert_ne!(two_strokes[..two_count], one_strokes[..one_count]);
+
+        for stroke in two_strokes
+            .into_iter()
+            .take(two_count)
+            .chain(one_strokes.into_iter().take(one_count))
+        {
+            for point in [stroke.from, stroke.to] {
+                assert!(point.x.abs() <= 0.5);
+                assert!(point.y.abs() <= 0.5);
+            }
+            assert_ne!(stroke.from, stroke.to);
+        }
+    }
+
+    #[test]
+    fn motion_prompt_layout_keeps_art_copy_and_figures_inside_target_viewports() {
+        for (width, height) in VIEWPORTS {
+            let layout = motion_prompt_layout(width, height);
+            assert!(layout.panel.x >= 0.0);
+            assert!(layout.panel.y >= 0.0);
+            assert!(layout.panel.x + layout.panel.w <= width);
+            assert!(layout.panel.y + layout.panel.h <= height);
+            for region in [layout.art, layout.content] {
+                assert!(region.x >= layout.panel.x);
+                assert!(region.y >= layout.panel.y);
+                assert!(region.x + region.w <= layout.panel.x + layout.panel.w);
+                assert!(region.y + region.h <= layout.panel.y + layout.panel.h);
+            }
+            assert!(layout.art.x + layout.art.w < layout.content.x);
+            for center in layout.figure_centers {
+                let bounds = motion_figure_bounds(center, layout.figure_scale);
+                assert!(bounds.x >= layout.content.x);
+                assert!(bounds.y >= layout.content.y);
+                assert!(bounds.x + bounds.w <= layout.content.x + layout.content.w);
+                assert!(bounds.y + bounds.h <= layout.content.y + layout.content.h);
+            }
+
+            let source = cover_source_rect(640.0, 640.0, layout.art);
+            assert!((source.w / source.h - layout.art.w / layout.art.h).abs() < 0.001);
+        }
+    }
+
+    #[test]
+    fn result_layout_stays_inside_target_viewports() {
+        for (width, height) in VIEWPORTS {
+            let layout = result_layout(width, height);
+            assert!(layout.panel.x >= 0.0);
+            assert!(layout.panel.y >= 0.0);
+            assert!(layout.panel.x + layout.panel.w <= width);
+            assert!(layout.panel.y + layout.panel.h <= height);
+            assert!(layout.chip_width >= 90.0);
+            assert!(layout.chip_y >= layout.panel.y);
+            assert!(layout.chip_y + layout.chip_height < layout.choose_y);
+            assert!(layout.choose_y + 24.0 <= layout.panel.y + layout.panel.h);
+            for index in 0..3 {
+                let chip = result_chip_rect(layout, index);
+                assert!(chip.x >= layout.panel.x);
+                assert!(chip.y >= layout.panel.y);
+                assert!(chip.x + chip.w <= layout.panel.x + layout.panel.w);
+                assert!(chip.y + chip.h <= layout.panel.y + layout.panel.h);
+                let indicator = result_indicator_layout(chip);
+                assert!(indicator.center.x - indicator.radius >= chip.x);
+                assert!(indicator.center.x + indicator.radius <= chip.x + chip.w);
+                assert!(indicator.center.y - indicator.radius >= chip.y);
+                assert!(indicator.lock_body.y + indicator.lock_body.h <= chip.y + chip.h);
+            }
+        }
+        assert_eq!(
+            result_title(Some(RunnerOutcome::BreakComplete)),
+            "BREAK COMPLETE"
+        );
+        assert_eq!(result_title(Some(RunnerOutcome::EnergySpent)), "NICE RUN!");
+    }
+
+    #[test]
+    fn result_art_crop_covers_cards_without_stretching() {
+        for (width, height) in VIEWPORTS {
+            let layout = result_layout(width, height);
+            for index in 0..3 {
+                let destination = result_chip_rect(layout, index);
+                let source = cover_source_rect(640.0, 640.0, destination);
+                assert!(source.x >= 0.0);
+                assert!(source.y >= 0.0);
+                assert!(source.x + source.w <= 640.0);
+                assert!(source.y + source.h <= 640.0);
+                assert!((source.w / source.h - destination.w / destination.h).abs() < 0.001);
+            }
+        }
+
+        let invalid = cover_source_rect(0.0, 640.0, Rect::new(0.0, 0.0, 100.0, 50.0));
+        assert_eq!(invalid, Rect::new(0.0, 0.0, 0.0, 640.0));
+    }
+
+    #[test]
+    fn result_duo_art_matches_deterministic_availability() {
+        let mut runner = RunnerGame::new();
+        assert!(!result_duo_available(&runner));
+        assert_eq!(
+            result_choices(false),
+            [
+                (GameMode::MirrorBeat, true),
+                (GameMode::BeatStrike, true),
+                (GameMode::DuoGroove, false),
+            ]
+        );
+
+        runner.players[0].evaluated = true;
+        runner.players[1].evaluated = true;
+        assert!(result_duo_available(&runner));
+        assert!(
+            result_choices(true)
+                .into_iter()
+                .all(|(_, available)| available)
         );
     }
-}
 
-fn draw_beat_meter(width: f32, height: f32, audio: AudioVisual) {
-    let meter_width = width.min(420.0) * 0.7;
-    let x = (width - meter_width) * 0.5;
-    let y = if height < 620.0 { 76.0 } else { 82.0 };
-    draw_rectangle(x, y, meter_width, 3.0, Color::new(1.0, 1.0, 1.0, 0.12));
-    draw_rectangle(
-        x,
-        y,
-        meter_width * audio.phase,
-        3.0 + audio.energy * 3.0,
-        Color::new(0.25 + audio.energy * 0.4, 0.85, 1.0, 0.9),
-    );
+    #[test]
+    fn canonical_mode_art_paths_exist_and_fallback_is_empty() {
+        for path in [MIRROR_ART_PATH, STRIKE_ART_PATH, DUO_ART_PATH] {
+            assert!(
+                std::path::Path::new(path).is_file(),
+                "missing canonical art: {path}"
+            );
+            let bytes = std::fs::read(path).expect("read canonical mode art");
+            let decoded = decode_mode_art(&bytes).expect("decode canonical WebP mode art");
+            assert_eq!((decoded.width, decoded.height), (640, 640));
+            assert_eq!(decoded.rgba.len(), 640 * 640 * 4);
+        }
+        assert!(decode_mode_art(&[]).is_none());
+        assert!(decode_mode_art(&vec![0; MODE_ART_MAX_ENCODED_BYTES + 1]).is_none());
+        assert!(decode_mode_art(b"not a webp").is_none());
+        let fallback = ModeArt::default();
+        for mode in [
+            GameMode::MirrorBeat,
+            GameMode::BeatStrike,
+            GameMode::DuoGroove,
+        ] {
+            assert!(fallback.texture(mode).is_none());
+        }
+    }
+
+    #[test]
+    fn session_and_beat_rails_stay_separate_inside_target_viewports() {
+        for (width, height) in VIEWPORTS {
+            let layout = session_meter_layout(width);
+            for rail in [layout.session_rail, layout.beat_rail] {
+                assert!(rail.x >= 0.0);
+                assert!(rail.y >= 0.0);
+                assert!(rail.x + rail.w <= width);
+                assert!(rail.y + rail.h <= height);
+            }
+            assert!(layout.session_rail.y + layout.session_rail.h < layout.beat_rail.y);
+            assert!(layout.beat_rail.y + layout.beat_rail.h < 58.0);
+        }
+    }
+
+    #[test]
+    fn four_player_hud_stays_inside_target_viewports() {
+        for (width, height) in VIEWPORTS {
+            let layout = player_hud_layout(width, height, 4);
+            let rows = 4_usize.div_ceil(layout.columns);
+            let right = layout.start_x
+                + layout.columns as f32 * layout.card_width
+                + (layout.columns - 1) as f32 * layout.gap;
+            let bottom =
+                layout.start_y + rows as f32 * layout.card_height + (rows - 1) as f32 * layout.gap;
+            assert!(layout.start_x >= 0.0);
+            assert!(layout.start_y >= 0.0);
+            assert!(right <= width);
+            assert!(bottom <= height);
+            assert!(layout.card_width >= 150.0);
+        }
+    }
+
+    #[test]
+    fn running_surface_reserves_a_body_clear_hud_deck() {
+        for (width, height) in VIEWPORTS {
+            for displayed in 1..=4 {
+                let layout = running_surface_layout(width, height, displayed);
+                let rows = displayed.div_ceil(layout.hud.columns);
+                let hud_bottom = layout.hud.start_y
+                    + rows as f32 * layout.hud.card_height
+                    + (rows - 1) as f32 * layout.hud.gap;
+
+                assert_eq!(layout.stage.x, 0.0);
+                assert_eq!(layout.stage.y, 0.0);
+                assert_eq!(layout.stage.w, width);
+                assert_eq!(layout.deck.x, 0.0);
+                assert_eq!(layout.deck.y, layout.stage.h);
+                assert_eq!(layout.deck.w, width);
+                assert_eq!(layout.deck.y + layout.deck.h, height);
+                assert!(layout.stage.h >= height * 0.60);
+                assert!(layout.stage.h + STAGE_HUD_GAP <= layout.hud.start_y);
+                assert!(layout.hud.start_y >= layout.deck.y);
+                assert!(hud_bottom <= layout.deck.y + layout.deck.h);
+            }
+        }
+    }
+
+    #[test]
+    fn hud_life_pips_stay_inside_cards_and_combo_starts_at_two() {
+        assert!(!hud_combo_visible(0));
+        assert!(!hud_combo_visible(1));
+        assert!(hud_combo_visible(2));
+
+        for (width, height) in VIEWPORTS {
+            for displayed in 1..=4 {
+                let layout = player_hud_layout(width, height, displayed);
+                let card = Rect::new(
+                    layout.start_x,
+                    layout.start_y,
+                    layout.card_width,
+                    layout.card_height,
+                );
+                let pips = life_pip_layout(card);
+                for center in pips.centers {
+                    assert!(center.x - pips.radius >= card.x);
+                    assert!(center.x + pips.radius <= card.x + card.w);
+                    assert!(center.y - pips.radius >= card.y);
+                    assert!(center.y + pips.radius <= card.y + card.h);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn start_and_resume_countdown_shapes_stay_inside_target_viewports() {
+        for (width, height) in VIEWPORTS {
+            let layout = countdown_overlay_layout(width, height);
+            let panel = layout.panel;
+            assert!(panel.x >= 0.0);
+            assert!(panel.y >= 0.0);
+            assert!(panel.x + panel.w <= width);
+            assert!(panel.y + panel.h <= height);
+            assert!(panel.w >= 320.0);
+            let outer_radius = layout.ring_radius + 8.0;
+            assert!(layout.ring_center.x - outer_radius >= panel.x);
+            assert!(layout.ring_center.x + outer_radius <= panel.x + panel.w);
+            assert!(layout.ring_center.y - outer_radius >= panel.y);
+            assert!(layout.ring_center.y + outer_radius <= panel.y + panel.h);
+            assert!(layout.title_y + 18.0 < layout.ring_center.y - outer_radius);
+            assert!(layout.stroke_scale * 0.5 < layout.ring_radius);
+        }
+    }
+
+    #[test]
+    fn intentional_pause_panel_and_shape_stay_inside_target_viewports() {
+        for (width, height) in VIEWPORTS {
+            let layout = pause_overlay_layout(width, height);
+            assert!(layout.panel.x >= 0.0);
+            assert!(layout.panel.y >= 0.0);
+            assert!(layout.panel.x + layout.panel.w <= width);
+            assert!(layout.panel.y + layout.panel.h <= height);
+            for bar in [layout.left_bar, layout.right_bar] {
+                assert!(bar.x >= layout.panel.x);
+                assert!(bar.y >= layout.panel.y);
+                assert!(bar.x + bar.w <= layout.panel.x + layout.panel.w);
+                assert!(bar.y + bar.h <= layout.title_y);
+            }
+            assert!(layout.title_y < layout.instruction_y);
+            let single_bounds =
+                motion_figure_bounds(layout.single_figure_center, layout.figure_scale);
+            assert!(layout.instruction_y + 18.0 < single_bounds.y);
+            assert!(single_bounds.x >= layout.panel.x);
+            assert!(single_bounds.y >= layout.panel.y);
+            assert!(single_bounds.x + single_bounds.w <= layout.panel.x + layout.panel.w);
+            assert!(single_bounds.y + single_bounds.h <= layout.panel.y + layout.panel.h);
+
+            let duo_bounds = layout
+                .duo_figure_centers
+                .map(|center| motion_figure_bounds(center, layout.figure_scale));
+            for bounds in duo_bounds {
+                assert!(bounds.x >= layout.panel.x);
+                assert!(bounds.y >= layout.panel.y);
+                assert!(bounds.x + bounds.w <= layout.panel.x + layout.panel.w);
+                assert!(bounds.y + bounds.h <= layout.panel.y + layout.panel.h);
+            }
+            assert!(duo_bounds[0].x + duo_bounds[0].w < duo_bounds[1].x);
+        }
+    }
 }

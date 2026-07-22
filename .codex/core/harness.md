@@ -72,4 +72,16 @@ Read `adr-rules.md` and leave a durable decision record when the change:
 7. Apply the required validation package and hard gates.
 8. Run persona review when the change is substantial.
 9. Sync docs and change-record state.
-10. Close with verified scope, unverified gaps, residual risk, and milestone status.
+10. **Trigger Reflect Loop** (`reflect-loop.md`): measure baseline, diagnose smells, gate, apply, validate delta, codify.
+11. Close with verified scope, unverified gaps, residual risk, and milestone status.
+
+## Reflect Triggers
+
+The Reflect Loop also fires on non-closeout signals:
+
+- A Better Loop finding is received → signal `finding`.
+- A guardrail command fails with `command not found` → signal `validation-failure`.
+- The same smell matches count ≥ 2 in `improve/smell-catalog.md` → signal `recurring-smell`.
+- User requests `/reflect` → signal `manual`.
+
+See `reflect-loop.md` for the full loop and `improve/strategies.md` for pluggable strategies.

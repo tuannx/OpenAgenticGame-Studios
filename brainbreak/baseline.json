@@ -1,0 +1,42 @@
+{
+  "timestamp": "2026-07-22T04:53:28Z",
+  "rust": {
+    "core_files": 1,
+    "core_max_file_loc": 2255,
+    "core_total_loc": 2255,
+    "core_pub_items": 48,
+    "game_files": 2,
+    "game_max_file_loc": 2705,
+    "game_total_loc": 4192
+  },
+  "typescript": {
+    "source_files": 15,
+    "source_loc": 2469,
+    "test_loc": 951,
+    "main_loc": 736,
+    "main_dom_queries": 40,
+    "main_listeners": 24,
+    "main_functions": 35
+  },
+  "workflow": {
+    "workflow_loc": 5088,
+    "product_loc": 8916,
+    "skill_count": 76,
+    "rule_count": 14,
+    "change_record_count": 39,
+    "lesson_count": 21,
+    "taste_sections": 33,
+    "taste_assertions": 0
+  },
+  "scores": {
+    "module_balance": 0,
+    "shell_cohesion": .1309,
+    "test_coverage_ratio": .3851,
+    "doc_product_ratio": .5706,
+    "taste_actionability": 0,
+    "layer_boundary": 0.92,
+    "dependency_health": 0.95,
+    "smell_discipline": 0.88,
+    "principle_alignment": 0.85
+  }
+}

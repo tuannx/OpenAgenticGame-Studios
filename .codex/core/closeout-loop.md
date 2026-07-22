@@ -15,7 +15,8 @@ If you want a ready-made summary shape, use `.codex/templates/closeout.md`.
 4. If a command fails, read the output, report, or latest log before changing code.
 5. Fix the actual cause, then re-run the affected validation.
 6. Update milestone status, changed docs, and any ADR follow-up that the task created.
-7. Only close when the implementation, validation, and documentation story is coherent.
+7. **Continuous Reflect & Improve**: Trigger the Reflect Loop (`reflect-loop.md`) with signal `closeout`. The loop measures baseline, diagnoses smells, gates via TasteScore, applies the smallest fix, validates delta, and codifies the learning to its durable owner (skill, rule, lesson, or gate).
+8. Only close when the implementation, validation, and documentation story is coherent.
 
 ## Closeout Checklist
 
@@ -27,6 +28,7 @@ Capture all of these:
 - what could not be verified locally
 - what remains risky or deferred
 - which docs or change records were updated
+- **what the Reflect Loop measured, diagnosed, applied, and validated (delta report)**
 
 ## Closure Standard
 

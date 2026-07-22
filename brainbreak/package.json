@@ -10,7 +10,8 @@
     "build": "npm run build:web",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "deploy": "npm run build && wrangler deploy",
+    "voice:gen": "node scripts/generate-voice.mjs",
+    "deploy": "npm run build && bash scripts/deploy-worker.sh",
     "dev:worker": "npm run build && wrangler dev"
   },
   "dependencies": {
@@ -27,6 +28,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20260721.1",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@types/node": "24.10.1",
     "@types/react": "19.2.7",
     "@types/react-dom": "19.2.3",
@@ -34,6 +36,7 @@
     "typescript": "5.9.3",
     "vite": "7.3.6",
     "vitest": "3.2.7",
-    "wrangler": "4.112.0"
+    "wrangler": "4.112.0",
+    "zod": "^4.4.3"
   }
 }

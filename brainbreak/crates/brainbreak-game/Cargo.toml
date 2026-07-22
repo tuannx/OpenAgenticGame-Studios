@@ -6,4 +6,5 @@ license.workspace = true
 
 [dependencies]
 brainbreak-core = { path = "../brainbreak-core" }
+image = { version = "=0.24.9", default-features = false, features = ["webp"] }
 macroquad.workspace = true

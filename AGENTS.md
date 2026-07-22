@@ -40,6 +40,35 @@ Validate native Rust behavior and the release `wasm32-unknown-unknown` artifact
 separately. Browser-facing changes also require an HTTP-served smoke test; a
 successful Cargo build alone is not browser-runtime proof.
 
+## Core Design & Collaboration Mindset
+
+- **Self-Improvement & Continuous Skillization**: In every session, actively distill, refine, and codify learned experience, patterns, and principles into persistent, reusable Skills (`refenrece/skills/`) and Rules (`refenrece/rules/`).
+- **LÀM ÍT - ĐƠN GIẢN - NGẮN GỌN - CHẤT LƯƠNG CAO (Do Less, Keep Simple & Concise, Deliver High Quality)**: Avoid feature bloat and visual clutter. Prioritize high-taste, high-impact, ultra-clean execution.
+- **LUÔN TRẢ LỜI ĐỦ LÝ DO MỚI BẮT ĐẦU LÀM (Always Explain Rationale Before Executing)**: Never make blind code edits. Explain the strategic design rationale (WHY, WHAT, HOW) and confirm alignment before implementation.
+
+## Continuous Reflect & Improve
+
+Every task closeout and every improvement signal triggers the **Reflect Loop**
+(`.codex/core/reflect-loop.md`) — a score-driven, taste-gated self-improvement
+engine built on GOF patterns, SOLID principles, Hexagonal Architecture, and the
+Arcade Agent optimization framework.
+
+**How it works:**
+1. **Measure** baseline (TasteScore + structural metrics) before proposing.
+2. **Diagnose** the smell against `.codex/core/improve/smell-catalog.md`.
+3. **Gate** via TasteScore delta rules (`.codex/core/improve/taste-gates.md`).
+4. **Apply** the smallest repair through a pluggable strategy.
+5. **Validate** delta and codify the learning to its durable owner.
+
+**Triggers:** closeout, Better Loop findings, validation failures, recurring
+smells, or manual `/reflect`.
+
+**Key files:**
+- Core loop: `.codex/core/reflect-loop.md`
+- Strategies: `.codex/core/improve/strategies.md`
+- Smell catalog: `.codex/core/improve/smell-catalog.md`
+- Taste gates: `.codex/core/improve/taste-gates.md`
+
 ## BrainBreak Motion Games
 
 For changes under `brainbreak/` or camera-controlled motion gameplay, also load:
@@ -47,15 +76,13 @@ For changes under `brainbreak/` or camera-controlled motion gameplay, also load:
 - Specialist: `refenrece/agents/programming/brainbreak-motion-game-specialist.md`
 - Skill: `refenrece/skills/brainbreak-motion-games/SKILL.md`
 - Architecture contract: `refenrece/skills/brainbreak-motion-games/references/architecture-contract.md`
+- Taste & Zero-Touch guide: `refenrece/skills/brainbreak-motion-games/references/taste-guide.md`
 
-Keep scoring and judgment camera-backed inside the deterministic runtime; a DOM
-warning or hidden control is not an evaluation boundary. When browser imports
-change, bump both the JavaScript bridge plugin version and the Rust
-`brainbreak_bridge_crate_version()` value. Camera/audio changes require a real
-browser interaction test, and P2P changes require two peers. If those surfaces
-are unavailable, report the exact gap instead of inferring success from builds.
-For production delivery, verify response content types before immutable caching
-so a SPA HTML fallback can never poison JavaScript, WASM, or audio asset caches.
+### Core Motion Game Rules
+1. **Zero-Touch UI Contract**: Users standing 1.5m – 2.5m away must NEVER be forced to touch the screen. All menu picks, stance ready checks, starts, and retries MUST be 100% hands-free via pose gestures (🖐️ Hand Hold 1s, 👏 Double Clap, ↔️ Body Lean).
+2. **Multiplayer Stance Check**: In 2-player / co-op modes, BOTH players must be detected in frame AND BOTH must perform ready gestures before starting.
+3. **Audio-Rhythm-Lighting Synergy**: Downbeat motion triggers quantized SFX, pitch scaling (+1 semitone per 5 combo), and neon visual pulses synced to track BPM.
+4. **Sensory Ritual Philosophy**: Treat 60-90 second motion breaks as a multi-sensory Awe-inducing ritual combining EDM drops, AR particle aura, fluid dynamics, and generative art.
 
 ## Replacement policy
 
