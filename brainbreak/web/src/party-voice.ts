@@ -1,17 +1,18 @@
 /**
- * Party voice + freeze-dance audio director.
+ * Party audio director — voice + music + SFX (triple channel with pictograms).
  *
- * Bridges Supernova Freeze Party phase events from the WASM game into:
- *  - Music pause/resume (music stopping IS the freeze cue — the classic game)
- *  - Kid-friendly voice commands via the browser SpeechSynthesis API
- *  - Synthesized celebration / freeze SFX via Web Audio
- *
- * Voice uses SpeechSynthesis so no audio assets are needed and it works
- * offline. Pitch is raised and rate slowed for a friendly, clear delivery
- * that kindergarten and grade-1 kids can follow.
+ * Kids at 1.5–4m cannot read. Key moments speak short coach lines while music
+ * beds/stingers keep rhythm. Prefers optional /voice clips; falls back to
+ * SpeechSynthesis; SFX+pictograms still work if speech is unavailable.
  */
 
 import { musicEngine } from './audio';
+import {
+  VOICE_CUES,
+  countdownCueId,
+  type VoiceCue,
+  type VoiceCueId,
+} from './party-voice-cues';
 
 /** Supernova event kinds sent from the Rust game (see platform.rs). */
 export const SupernovaEvent = {
@@ -21,15 +22,13 @@ export const SupernovaEvent = {
   PerfectFreeze: 4,
   Drop: 5,
   Result: 6,
+  DropImminent: 7,
+  LavaWarning: 8,
 } as const;
 
-/**
- * Voice-clip manifest key → filename. Clips are pre-generated at build time
- * with the Kokoro small model (see scripts/generate-voice.mjs) and served from
- * /voice/. When a manifest is present the player prefers those consistent,
- * kid-friendly clips; otherwise it falls back to the device SpeechSynthesis API.
- */
 const VOICE_MANIFEST_URL = '/voice/manifest.json';
+const SHELL_THROTTLE_MS = 2_400;
+const DUCK_SAFETY_MS = 2_800;
 
 class PartyVoice {
   private voice: SpeechSynthesisVoice | null = null;
@@ -37,25 +36,25 @@ class PartyVoice {
   private clipManifest: Record<string, string> | null = null;
   private clipBuffers = new Map<string, AudioBuffer>();
   private clipCheckStarted = false;
+  private duckTimer: ReturnType<typeof setTimeout> | null = null;
+  private speaking = false;
 
   constructor() {
     this.pickVoice();
     if (typeof speechSynthesis !== 'undefined') {
-      // Voices load asynchronously in some browsers.
       speechSynthesis.addEventListener?.('voiceschanged', () => this.pickVoice());
     }
   }
 
-  /** Rank available voices so we pick a clean, friendly one rather than the first. */
   private pickVoice(): void {
     if (typeof speechSynthesis === 'undefined') return;
     const voices = speechSynthesis.getVoices();
     const score = (v: SpeechSynthesisVoice): number => {
       const name = v.name.toLowerCase();
       let s = 0;
-      if (name.includes('google')) s += 4; // Chrome's Google voices are clear & pleasant
+      if (name.includes('google')) s += 4;
       if (name.includes('natural') || name.includes('premium') || name.includes('enhanced')) s += 3;
-      if (name.includes('samantha') || name.includes('ava') || name.includes('allison')) s += 2; // macOS quality
+      if (name.includes('samantha') || name.includes('ava') || name.includes('allison')) s += 2;
       if (v.lang === 'en-US') s += 1;
       if (v.localService) s += 1;
       return s;
@@ -69,17 +68,15 @@ class PartyVoice {
     return (musicEngine as unknown as { context?: AudioContext }).context;
   }
 
-  /** One-time check for pre-generated voice clips (Kokoro build output). */
   private async ensureClipsChecked(): Promise<void> {
     if (this.clipCheckStarted) return;
     this.clipCheckStarted = true;
     try {
       const res = await fetch(VOICE_MANIFEST_URL);
-      if (!res.ok) return; // no clips shipped -> SpeechSynthesis only
-      const manifest = (await res.json()) as Record<string, string>;
-      this.clipManifest = manifest;
+      if (!res.ok) return;
+      this.clipManifest = (await res.json()) as Record<string, string>;
     } catch {
-      // Offline or manifest absent; SpeechSynthesis remains the fallback.
+      // Clips optional — SpeechSynthesis remains the path.
     }
   }
 
@@ -105,52 +102,92 @@ class PartyVoice {
 
   setEnabled(enabled: boolean): void {
     this.enabled = enabled;
-    if (!enabled && typeof speechSynthesis !== 'undefined') {
-      speechSynthesis.cancel();
+    if (!enabled) {
+      if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
+      this.clearDuck();
     }
   }
 
-  /**
-   * Speak a command by key. Prefers a pre-generated Kokoro clip when available;
-   * otherwise falls back to the device SpeechSynthesis voice.
-   */
-  async speak(key: string, text: string, opts?: { pitch?: number; rate?: number }): Promise<void> {
+  private beginDuck(cue: VoiceCue): void {
+    if (cue.silenceBed) return;
+    musicEngine.duck(0.26, 0.07);
+    if (this.duckTimer) clearTimeout(this.duckTimer);
+    this.duckTimer = setTimeout(() => this.clearDuck(), DUCK_SAFETY_MS);
+  }
+
+  private clearDuck(): void {
+    if (this.duckTimer) {
+      clearTimeout(this.duckTimer);
+      this.duckTimer = null;
+    }
+    musicEngine.unduck(0.2);
+    this.speaking = false;
+  }
+
+  /** Prefer clip, then Web Speech; never throws. */
+  async speakCue(cue: VoiceCue): Promise<void> {
     if (!this.enabled) return;
     const context = this.audioContext();
-    const buffer = await this.clipBuffer(key);
+    const buffer = await this.clipBuffer(cue.id);
     if (buffer && context && context.state === 'running') {
       if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
+      this.beginDuck(cue);
+      this.speaking = true;
       const source = context.createBufferSource();
       source.buffer = buffer;
       source.connect(context.destination);
+      source.onended = () => this.clearDuck();
       source.start();
       return;
     }
-    this.say(text, opts);
+    this.say(cue.text, cue);
   }
 
-  /** Speak a short kid-friendly phrase via SpeechSynthesis. Cancels in-flight speech. */
-  say(text: string, opts?: { pitch?: number; rate?: number }): void {
+  say(text: string, cue?: VoiceCue): void {
     if (!this.enabled || typeof speechSynthesis === 'undefined') return;
     try {
       speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
       if (this.voice) utterance.voice = this.voice;
-      utterance.pitch = opts?.pitch ?? 1.3; // higher = friendlier for kids
-      utterance.rate = opts?.rate ?? 0.95; // slightly slower for clarity
-      utterance.volume = 1.0;
+      utterance.pitch = cue?.pitch ?? 1.3;
+      utterance.rate = cue?.rate ?? 0.95;
+      utterance.volume = 1;
+      if (cue) this.beginDuck(cue);
+      this.speaking = true;
+      utterance.onend = () => this.clearDuck();
+      utterance.onerror = () => this.clearDuck();
       speechSynthesis.speak(utterance);
     } catch {
-      // Speech is a nice-to-have; never break the game over it.
+      this.clearDuck();
     }
   }
+
+  get isSpeaking(): boolean {
+    return this.speaking;
+  }
 }
+
+export type ShellGuideMoment =
+  | 'ritual_jump'
+  | 'ritual_lava'
+  | 'raise_hand'
+  | 'hold'
+  | 'duo_invite'
+  | 'lets_go'
+  | 'jump'
+  | 'clap_replay';
 
 class PartyDirector {
   private voice = new PartyVoice();
   private lastCountdown = -1;
+  private bassSwellActive = false;
+  private bassSwellOsc?: OscillatorNode;
+  private bassSwellGain?: GainNode;
+  private lastShellAt = 0;
+  private lastShellId: VoiceCueId | null = null;
+  private holdAnnounced = false;
+  private duoInviteAnnounced = false;
 
-  /** Handle a Supernova phase event from the WASM game. */
   handleEvent(kind: number, value: number): void {
     switch (kind) {
       case SupernovaEvent.Countdown:
@@ -158,6 +195,9 @@ class PartyDirector {
         break;
       case SupernovaEvent.Dance:
         this.onDance();
+        break;
+      case SupernovaEvent.LavaWarning:
+        this.onLavaWarning();
         break;
       case SupernovaEvent.Freeze:
         this.onFreeze();
@@ -171,57 +211,152 @@ class PartyDirector {
       case SupernovaEvent.Result:
         this.onResult(value);
         break;
+      case SupernovaEvent.DropImminent:
+        this.onDropImminent();
+        break;
       default:
         break;
     }
   }
 
+  /** Shell / Ready / BrainBreak key-moment VO — throttled, not tip spam. */
+  guide(moment: ShellGuideMoment, opts?: { force?: boolean }): void {
+    const cue = VOICE_CUES[moment];
+    if (!cue) return;
+    const now = performance.now();
+    if (!opts?.force) {
+      if (this.lastShellId === cue.id && now - this.lastShellAt < SHELL_THROTTLE_MS * 2) return;
+      if (now - this.lastShellAt < SHELL_THROTTLE_MS) return;
+    }
+    this.lastShellAt = now;
+    this.lastShellId = cue.id;
+    void this.voice.speakCue(cue);
+  }
+
+  resetReadyGuides(): void {
+    this.holdAnnounced = false;
+    this.duoInviteAnnounced = false;
+  }
+
+  onReadyOpened(family: 'brainbreak' | 'ar'): void {
+    this.resetReadyGuides();
+    this.guide(family === 'ar' ? 'ritual_lava' : 'ritual_jump', { force: true });
+    // Space before hands-up so lines do not stack.
+    setTimeout(() => this.guide('raise_hand', { force: true }), 900);
+  }
+
+  onReadyHoldProgress(progress: number): void {
+    if (progress < 0.18 || this.holdAnnounced) return;
+    this.holdAnnounced = true;
+    this.guide('hold', { force: true });
+  }
+
+  onDuoNeedsPartner(needsPartner: boolean): void {
+    if (!needsPartner) {
+      this.duoInviteAnnounced = false;
+      return;
+    }
+    if (this.duoInviteAnnounced) return;
+    this.duoInviteAnnounced = true;
+    this.guide('duo_invite', { force: true });
+  }
+
+  onGameplayStart(family: 'brainbreak' | 'ar'): void {
+    this.guide(family === 'ar' ? 'lets_go' : 'jump', { force: true });
+  }
+
+  onRitualSelected(family: 'brainbreak' | 'ar'): void {
+    this.guide(family === 'ar' ? 'ritual_lava' : 'ritual_jump');
+  }
+
+  private speakId(id: VoiceCueId): void {
+    void this.voice.speakCue(VOICE_CUES[id]);
+  }
+
   private onCountdown(num: number): void {
-    // num = 2, 1 during countdown; 0 = GO!
     if (num === this.lastCountdown) return;
     this.lastCountdown = num;
-    if (num > 0) {
-      void this.voice.speak(`count_${num}`, String(num), { pitch: 1.4, rate: 1.0 });
+    const cueId = countdownCueId(num);
+    if (cueId && cueId !== 'go') {
+      this.speakId(cueId);
       this.playTick(num);
-    } else {
-      void this.voice.speak('go', 'Go go go!', { pitch: 1.5, rate: 1.1 });
+    } else if (num === 0) {
+      this.speakId('go');
       this.playGo();
     }
   }
 
   private onDance(): void {
     this.lastCountdown = -1;
+    this.stopBassSwell();
     musicEngine.resume();
-    void this.voice.speak('dance', 'Dance!', { pitch: 1.4, rate: 1.0 });
+    this.playDanceStinger();
+    this.speakId('dance');
+  }
+
+  private onLavaWarning(): void {
+    this.lastCountdown = -1;
+    this.stopBassSwell();
+    musicEngine.resume();
+    this.playWarnStinger();
+    this.speakId('lava');
   }
 
   private onFreeze(): void {
-    musicEngine.pause(); // music stopping is the freeze signal
+    this.stopBassSwell();
+    musicEngine.pause();
     this.playFreezeShimmer();
-    void this.voice.speak('freeze', 'Freeze!', { pitch: 1.2, rate: 0.85 });
+    // Brief beat of silence, then spoken Freeze — music already stopped.
+    setTimeout(() => this.speakId('freeze'), 120);
   }
 
   private onPerfectFreeze(): void {
     this.playChime();
-    void this.voice.speak('great_job', 'Great job!', { pitch: 1.4, rate: 1.0 });
+    this.speakId('perfect');
+  }
+
+  private onDropImminent(): void {
+    this.startBassSwell();
   }
 
   private onDrop(): void {
+    this.stopBassSwell();
     musicEngine.resume();
     this.playCelebration();
-    void this.voice.speak('super_nova', 'Super nova!', { pitch: 1.5, rate: 1.05 });
-  }
-
-  private onResult(outcome: number): void {
-    // outcome: 0 = full supernova, 1 = time expired
-    if (outcome === 0) {
-      void this.voice.speak('wow', 'Wow! You did it!', { pitch: 1.4, rate: 1.0 });
-    } else {
-      void this.voice.speak('yay', 'Yay! Nice dancing!', { pitch: 1.4, rate: 1.0 });
+    this.playBassDrop();
+    this.speakId('drop');
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      navigator.vibrate([80, 40, 160]);
     }
   }
 
-  // --- Synthesized SFX (Web Audio, no assets) ---
+  private onResult(outcome: number): void {
+    this.stopBassSwell();
+    this.playAfterglowChime();
+    this.speakId(outcome === 0 ? 'celebrate' : 'nice_try');
+    setTimeout(() => this.guide('clap_replay', { force: true }), 1_100);
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      navigator.vibrate([40, 30, 40]);
+    }
+  }
+
+  private playAfterglowChime(): void {
+    const ctx = this.context();
+    if (!ctx || ctx.state !== 'running') return;
+    const at = ctx.currentTime;
+    [523, 659, 784].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, at + i * 0.09);
+      gain.gain.setValueAtTime(0.001, at + i * 0.09);
+      gain.gain.exponentialRampToValueAtTime(0.09, at + i * 0.09 + 0.04);
+      gain.gain.exponentialRampToValueAtTime(0.001, at + i * 0.09 + 0.55);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(at + i * 0.09);
+      osc.stop(at + i * 0.09 + 0.6);
+    });
+  }
 
   private context(): AudioContext | undefined {
     return (musicEngine as unknown as { context?: AudioContext }).context;
@@ -258,7 +393,41 @@ class PartyDirector {
     osc.stop(at + 0.32);
   }
 
-  /** Icy descending shimmer for the freeze moment. */
+  private playDanceStinger(): void {
+    const ctx = this.context();
+    if (!ctx || ctx.state !== 'running') return;
+    const at = ctx.currentTime;
+    [392, 523, 659].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, at + i * 0.05);
+      gain.gain.setValueAtTime(0.001, at + i * 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.1, at + i * 0.05 + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.001, at + i * 0.05 + 0.22);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(at + i * 0.05);
+      osc.stop(at + i * 0.05 + 0.25);
+    });
+  }
+
+  private playWarnStinger(): void {
+    const ctx = this.context();
+    if (!ctx || ctx.state !== 'running') return;
+    const at = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(220, at);
+    osc.frequency.exponentialRampToValueAtTime(440, at + 0.35);
+    gain.gain.setValueAtTime(0.001, at);
+    gain.gain.exponentialRampToValueAtTime(0.12, at + 0.05);
+    gain.gain.exponentialRampToValueAtTime(0.001, at + 0.4);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(at);
+    osc.stop(at + 0.42);
+  }
+
   private playFreezeShimmer(): void {
     const ctx = this.context();
     if (!ctx || ctx.state !== 'running') return;
@@ -278,12 +447,11 @@ class PartyDirector {
     }
   }
 
-  /** Bright ascending chime for a perfect freeze star. */
   private playChime(): void {
     const ctx = this.context();
     if (!ctx || ctx.state !== 'running') return;
     const at = ctx.currentTime;
-    const notes = [523, 659, 784, 1046]; // C5 E5 G5 C6
+    const notes = [523, 659, 784, 1046];
     notes.forEach((freq, i) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
@@ -297,12 +465,11 @@ class PartyDirector {
     });
   }
 
-  /** Big celebration arpeggio for the supernova drop. */
   private playCelebration(): void {
     const ctx = this.context();
     if (!ctx || ctx.state !== 'running') return;
     const at = ctx.currentTime;
-    const notes = [392, 523, 659, 784, 1046, 1318]; // G4→E6 rising
+    const notes = [392, 523, 659, 784, 1046, 1318];
     notes.forEach((freq, i) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
@@ -314,6 +481,82 @@ class PartyDirector {
       osc.start(at + i * 0.08);
       osc.stop(at + i * 0.08 + 0.42);
     });
+  }
+
+  private playBassDrop(): void {
+    const ctx = this.context();
+    if (!ctx || ctx.state !== 'running') return;
+    const at = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(95, at);
+    osc.frequency.exponentialRampToValueAtTime(28, at + 0.55);
+    gain.gain.setValueAtTime(0.34, at);
+    gain.gain.exponentialRampToValueAtTime(0.001, at + 0.7);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(at);
+    osc.stop(at + 0.72);
+
+    const thud = ctx.createOscillator();
+    const thudGain = ctx.createGain();
+    thud.type = 'sine';
+    thud.frequency.setValueAtTime(58, at);
+    thud.frequency.exponentialRampToValueAtTime(22, at + 0.35);
+    thudGain.gain.setValueAtTime(0.28, at);
+    thudGain.gain.exponentialRampToValueAtTime(0.001, at + 0.4);
+    thud.connect(thudGain).connect(ctx.destination);
+    thud.start(at);
+    thud.stop(at + 0.42);
+  }
+
+  private startBassSwell(): void {
+    if (this.bassSwellActive) return;
+    musicEngine.setDropTension(true);
+    const ctx = this.context();
+    if (!ctx || ctx.state !== 'running') return;
+    this.bassSwellActive = true;
+    const at = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(48, at);
+    osc.frequency.linearRampToValueAtTime(72, at + 2.4);
+    gain.gain.setValueAtTime(0.001, at);
+    gain.gain.exponentialRampToValueAtTime(0.16, at + 0.35);
+    gain.gain.linearRampToValueAtTime(0.22, at + 2.8);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(at);
+    osc.stop(at + 8.0);
+    this.bassSwellOsc = osc;
+    this.bassSwellGain = gain;
+  }
+
+  private stopBassSwell(): void {
+    musicEngine.setDropTension(false);
+    if (!this.bassSwellActive) return;
+    this.bassSwellActive = false;
+    const ctx = this.context();
+    const gain = this.bassSwellGain;
+    const osc = this.bassSwellOsc;
+    this.bassSwellGain = undefined;
+    this.bassSwellOsc = undefined;
+    if (ctx && gain) {
+      try {
+        gain.gain.cancelScheduledValues(ctx.currentTime);
+        gain.gain.setValueAtTime(Math.max(0.001, gain.gain.value), ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
+      } catch {
+        // Ignore teardown races.
+      }
+    }
+    if (osc) {
+      try {
+        osc.stop((ctx?.currentTime ?? 0) + 0.1);
+      } catch {
+        // Already stopped.
+      }
+    }
   }
 }
 

@@ -265,7 +265,7 @@ export function buildAgentPrompt(config: GameConfigJson): string {
     '1. Call the BrainBreak MCP tool "validate_game" with this JSON to confirm it is valid.',
     `2. Call the BrainBreak MCP tool "save_game" with this JSON to persist it to brainbreak/games/${config.id}.game.json.`,
     '3. Optionally author tasteful variations (different pacing/theme/end) with additional "save_game" calls, or suggest matching resources.',
-    '4. Playback is per-device (localStorage): instruct the user to open the Studio, use Import, and paste this JSON to play it under "MY GAMES".',
+    '4. Playback is per-device (localStorage): open Studio → Import → paste this JSON, then launch via Studio play or ?game=<id> (custom games are hidden from the player shell).',
     '5. Do not modify the Rust engine — games are fully data-driven through this config schema.',
   ].join('\n');
 }

@@ -72,6 +72,23 @@ fn raised_hand_only_triggers_on_rising_edge() {
 }
 
 #[test]
+fn both_wrists_below_hips_trigger_hands_down() {
+    let mut recognizer = PoseRecognizer::default();
+    recognizer.update(&standing_pose(0.0));
+
+    let mut reach_down = standing_pose(300.0);
+    reach_down.keypoints[9].y = 0.72;
+    reach_down.keypoints[10].y = 0.72;
+    let sample = recognizer.update(&reach_down);
+    assert_ne!(sample.active & Action::HandsDown.mask(), 0);
+    assert_eq!(sample.triggered & Action::HandsDown.mask(), Action::HandsDown.mask());
+    assert_eq!(sample.active & Action::GAMEPLAY_MASK, 0);
+
+    reach_down.timestamp_ms = 600.0;
+    assert_eq!(recognizer.update(&reach_down).triggered & Action::HandsDown.mask(), 0);
+}
+
+#[test]
 fn pause_requires_a_one_second_separated_two_hand_hold() {
     let mut recognizer = PoseRecognizer::default();
     recognizer.update(&standing_pose(0.0));
@@ -442,7 +459,7 @@ fn single_player_runner_counts_down_after_an_evaluated_motion() {
     assert_eq!(game.world_distance, 0.0);
     assert_eq!(game.beat_index, 0);
 
-    for _ in 0..40 {
+    for _ in 0..60 {
         game.update(
             0.05,
             [Action::MoveRight.mask(), 0, 0, 0],
@@ -835,7 +852,7 @@ fn intentional_pause_requires_evaluated_clap_then_counts_down_while_frozen() {
     assert_eq!(game.phase, RunnerPhase::PauseResuming);
     assert_eq!(game.countdown_remaining, RUNNER_COUNTDOWN_SECONDS);
 
-    for _ in 0..40 {
+    for _ in 0..60 {
         game.update(
             0.05,
             [Action::MoveRight.mask(), 0, 0, 0],
@@ -965,7 +982,7 @@ fn tracking_hold_requires_evaluated_signal_then_counts_down_while_frozen() {
     assert_eq!(game.countdown_remaining, RUNNER_COUNTDOWN_SECONDS);
     assert_eq!(game.world_distance, distance);
 
-    for _ in 0..40 {
+    for _ in 0..60 {
         game.update(
             0.05,
             [0; PLAYER_CAPACITY],

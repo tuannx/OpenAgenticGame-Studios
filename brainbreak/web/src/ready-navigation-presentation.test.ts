@@ -14,14 +14,14 @@ const baseState: MotionNavigationState = {
 
 const readyFraming: PoseFramingPresentation = {
   cameraState: 'ready',
-  instruction: 'BODY READY',
+  instruction: 'READY · RAISE',
 };
 
 describe('shape-first ready navigation presentation', () => {
   it('keeps a physical framing correction above navigation feedback', () => {
     const framing: PoseFramingPresentation = {
       cameraState: 'move-back',
-      instruction: 'STEP BACK - SHOW HEAD, SHOULDERS & HIPS',
+      instruction: 'STEP BACK · FULL BODY',
     };
 
     expect(presentReadyNavigation({
@@ -41,7 +41,7 @@ describe('shape-first ready navigation presentation', () => {
       .toBe('right');
     expect(presentReadyNavigation(baseState, readyFraming)).toEqual({
       visualState: 'neutral',
-      status: 'BODY READY',
+      status: 'READY · RAISE',
     });
   });
 
@@ -49,8 +49,29 @@ describe('shape-first ready navigation presentation', () => {
     const early = presentReadyNavigation({ ...baseState, confirmProgress: 0.1 }, readyFraming);
     const late = presentReadyNavigation({ ...baseState, confirmProgress: 0.95 }, readyFraming);
 
-    expect(early).toEqual({ visualState: 'holding', status: 'KEEP YOUR HAND UP' });
+    expect(early).toEqual({ visualState: 'holding', status: 'HOLD · KEEP RISING' });
     expect(late).toEqual(early);
     expect(early.status).not.toMatch(/[0-9%•↔⬅➡🙌👀✨]/u);
+  });
+
+  it('surfaces party invite copy when Duo has two tracked bodies', () => {
+    expect(presentReadyNavigation({
+      ...baseState,
+      mode: 'duo',
+      requiredPlayers: 2,
+      trackedPlayers: 2,
+    }, readyFraming)).toEqual({
+      visualState: 'neutral',
+      status: 'PARTY · BOTH RAISE',
+    });
+  });
+
+  it('asks for a partner when Duo is selected with one body', () => {
+    expect(presentReadyNavigation({
+      ...baseState,
+      mode: 'duo',
+      requiredPlayers: 2,
+      trackedPlayers: 1,
+    }, readyFraming).status).toBe('NEED P2 IN FRAME');
   });
 });

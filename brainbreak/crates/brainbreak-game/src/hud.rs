@@ -5,35 +5,8 @@ use crate::platform::player_color;
 use crate::visuals::{AudioVisual, draw_round_panel};
 
 pub fn draw_header(width: f32, runner: &RunnerGame, guide_only: bool) {
-    let margin = (width * 0.03).max(18.0);
-    draw_text(
-        runner.mode.title(),
-        margin,
-        34.0,
-        if width < 560.0 { 21.0 } else { 25.0 },
-        Color::from_rgba(103, 232, 249, 255),
-    );
-    let state = match runner.phase {
-        brainbreak_core::RunnerPhase::Paused => "PAUSED",
-        brainbreak_core::RunnerPhase::TrackingHold => "TRACKING HOLD",
-        brainbreak_core::RunnerPhase::Starting
-        | brainbreak_core::RunnerPhase::PauseResuming
-        | brainbreak_core::RunnerPhase::Resuming => "GET READY",
-        _ if guide_only => "GUIDANCE ONLY",
-        _ => "90 SEC BREAK",
-    };
-    let size = measure_text(state, None, 14, 1.0);
-    draw_text(
-        state,
-        width - margin - size.width,
-        34.0,
-        14.0,
-        if guide_only {
-            Color::from_rgba(253, 230, 138, 255)
-        } else {
-            Color::from_rgba(196, 181, 253, 255)
-        },
-    );
+    // Quiet shape markers only — mode/phase words moved to VO + pictograms.
+    let _ = (width, runner, guide_only);
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -165,30 +138,25 @@ pub fn draw_player_hud(runner: &RunnerGame, layout: PlayerHudLayout) {
             23.0
         };
         let top_font = if layout.card_height < 52.0 { 17 } else { 19 };
-        draw_text(
-            player_label(player),
-            x + 14.0,
-            top_baseline,
-            top_font as f32,
-            player_color(player),
-        );
-        let score = if state.evaluated {
-            format!("{:05}", state.score)
+        // Identity = color pip (no P1/P2 words at camera distance).
+        draw_circle(x + 22.0, top_baseline - 6.0, 8.0, player_color(player));
+        draw_circle(x + 22.0, top_baseline - 6.0, 3.2, WHITE);
+        if state.evaluated {
+            let score = format!("{:05}", state.score);
+            let score_size = measure_text(&score, None, top_font, 1.0);
+            draw_text(
+                &score,
+                x + layout.card_width - 14.0 - score_size.width,
+                top_baseline,
+                top_font as f32,
+                WHITE,
+            );
         } else {
-            "WAIT".to_owned()
-        };
-        let score_size = measure_text(&score, None, top_font, 1.0);
-        draw_text(
-            &score,
-            x + layout.card_width - 14.0 - score_size.width,
-            top_baseline,
-            top_font as f32,
-            if state.evaluated {
-                WHITE
-            } else {
-                Color::from_rgba(148, 163, 184, 255)
-            },
-        );
+            // Waiting body = empty frame corners, not "WAIT" text.
+            let fx = x + layout.card_width - 34.0;
+            let fy = top_baseline - 14.0;
+            draw_rectangle_lines(fx, fy, 20.0, 16.0, 2.0, Color::from_rgba(148, 163, 184, 200));
+        }
         draw_life_pips(life_pip_layout(card), state.lives, player_color(player));
         if state.evaluated && hud_combo_visible(state.combo) {
             draw_combo_badge(card, state.combo, player_color(player));
@@ -316,7 +284,12 @@ pub fn draw_session_meter(width: f32, run_progress: f32, audio: AudioVisual) {
         layout.beat_rail.x,
         layout.beat_rail.y,
         layout.beat_rail.w * audio.phase,
-        layout.beat_rail.h + audio.energy * 2.0,
-        Color::new(0.25 + audio.energy * 0.4, 0.85, 1.0, 0.9),
+        layout.beat_rail.h + audio.energy * 2.0 + audio.pulse * 3.0,
+        Color::new(
+            0.22 + audio.energy * 0.35 + audio.pulse * 0.25,
+            0.85,
+            1.0,
+            0.88 + audio.pulse * 0.12,
+        ),
     );
 }

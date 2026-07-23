@@ -1,33 +1,35 @@
-//! Supernova Freeze Party — a Freeze-Dance brain break for ages 4–7.
+//! Supernova Freeze Party — a Floor-is-Lava / Freeze-Dance brain break for ages 4–7.
 //!
-//! Core loop built on the classic children's game "Freeze Dance" (a.k.a.
-//! Frozen Freeze / Red-Light-Green-Light): dance while the music plays, then
-//! hold perfectly still when it stops. Every kid already knows the rules, so
-//! the learning curve is zero. Perfect freezes earn stars; dancing charges a
-//! shared energy core that finally bursts into a Supernova celebration.
+//! Ritual loop mirrors the classic kids party game (dance → 5-4-3-2-1 → freeze /
+//! "floor is lava" stillness → repeat). Music beds and voice callouts are
+//! studio-owned or separately licensed — commercial song audio is never bundled.
+//! Perfect freezes earn stars; dancing charges a shared energy core that finally
+//! bursts into a Supernova celebration.
 
 use serde::{Deserialize, Serialize};
 
 use crate::PLAYER_CAPACITY;
 use crate::pose::Action;
 
-/// Beats per minute for the Supernova track (matches global 126 BPM).
-const SUPERNOVA_BPM: f32 = 126.0;
+/// Beats per minute for the Supernova track (matches lava-freeze party bed).
+const SUPERNOVA_BPM: f32 = 140.0;
 const SUPERNOVA_BEAT_SECONDS: f32 = 60.0 / SUPERNOVA_BPM;
 
-/// Dance phase duration: music on, move to charge energy.
-pub const SUPERNOVA_DANCE_SECONDS: f32 = 8.0;
-/// Freeze phase duration: music stops, hold still.
-pub const SUPERNOVA_FREEZE_SECONDS: f32 = 3.0;
-/// Drop (supernova celebration) animation duration.
-pub const SUPERNOVA_DROP_SECONDS: f32 = 3.0;
-/// Countdown before the first dance round.
-pub const SUPERNOVA_COUNTDOWN_SECONDS: f32 = 2.0;
+/// Dance phase: wind/ocean sway on safe ground (slow enough for Zero-Touch).
+pub const SUPERNOVA_DANCE_SECONDS: f32 = 10.0;
+/// Pre-freeze: smoke/fire rising with readable 5→1 countdown.
+pub const SUPERNOVA_LAVA_WARNING_SECONDS: f32 = 5.0;
+/// Ice freeze hold — fair for toddlers / classroom distance.
+pub const SUPERNOVA_FREEZE_SECONDS: f32 = 4.5;
+/// Drop (fire celebrate) then result cools toward ocean calm.
+pub const SUPERNOVA_DROP_SECONDS: f32 = 3.5;
+/// Opening smoke-clear countdown before the first dance.
+pub const SUPERNOVA_COUNTDOWN_SECONDS: f32 = 3.0;
 /// Total session safety cap (time-boxed positive break).
 pub const SUPERNOVA_SESSION_SECONDS: f32 = 75.0;
 
-/// Beat window: actions within this fraction of a beat are "on-beat".
-const ON_BEAT_WINDOW: f32 = 0.35;
+/// Wide on-beat window — smile-first, not frantic spam.
+const ON_BEAT_WINDOW: f32 = 0.4;
 /// Energy added per on-beat dance action (before combo multiplier).
 const BASE_ENERGY_PER_HIT: f32 = 0.03;
 /// Energy added for off-beat actions (still rewards movement).
@@ -37,13 +39,15 @@ const COMBO_MULTIPLIER_STEP: f32 = 0.15;
 /// Maximum combo multiplier cap.
 const MAX_COMBO_MULTIPLIER: f32 = 3.0;
 /// Co-op bonus: energy multiplier when 2+ players are dancing.
-const COOP_ENERGY_BONUS: f32 = 1.5;
+const COOP_ENERGY_BONUS: f32 = 1.75;
 /// Reaction-time grace at the start of a freeze (no penalty).
-const FREEZE_GRACE_SECONDS: f32 = 0.35;
+const FREEZE_GRACE_SECONDS: f32 = 0.55;
 /// Allowed cumulative movement time during a freeze (forgives jitter).
-const FREEZE_MOVE_BUDGET: f32 = 0.25;
+const FREEZE_MOVE_BUDGET: f32 = 0.4;
 /// Energy bonus awarded for a perfect freeze.
 const PERFECT_FREEZE_ENERGY: f32 = 0.16;
+/// Core starts trembling — Drop is about to land.
+const DROP_IMMINENT_ENERGY: f32 = 0.82;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -53,7 +57,9 @@ pub enum SupernovaPhase {
     Countdown,
     /// Music on — dance to charge the core.
     Dance,
-    /// Music stops — hold perfectly still.
+    /// Tension beat: countdown 5→1 before Floor is Lava / Freeze.
+    LavaWarning,
+    /// Music stops — hold perfectly still (Floor is Lava).
     Freeze,
     /// Supernova celebration.
     Drop,
@@ -141,6 +147,8 @@ pub struct SupernovaGame {
     pub beat_progress: f32,
     /// True on the exact frame the drop triggers (for renderer explosion).
     pub drop_triggered: bool,
+    /// True while energy is near full — micro-shake / tension cue.
+    pub drop_imminent: bool,
     /// Accumulated time for beat tracking.
     beat_accumulator: f32,
     /// Cooldown to prevent double-triggering on same action.
@@ -181,6 +189,7 @@ impl SupernovaGame {
             beat_index: 0,
             beat_progress: 0.0,
             drop_triggered: false,
+            drop_imminent: false,
             beat_accumulator: 0.0,
             hit_cooldown: [0.0; PLAYER_CAPACITY],
             freeze_elapsed: 0.0,
@@ -209,6 +218,7 @@ impl SupernovaGame {
         self.beat_progress = 0.0;
         self.beat_accumulator = 0.0;
         self.drop_triggered = false;
+        self.drop_imminent = false;
         self.hit_cooldown = [0.0; PLAYER_CAPACITY];
         self.freeze_elapsed = 0.0;
         self.freeze_move_time = 0.0;
@@ -229,6 +239,7 @@ impl SupernovaGame {
         // Clear per-frame feedback.
         self.feedback = [SupernovaFeedback::default(); PLAYER_CAPACITY];
         self.drop_triggered = false;
+        self.drop_imminent = false;
         self.perfect_freeze = false;
         self.freeze_wobble = false;
 
@@ -236,6 +247,7 @@ impl SupernovaGame {
             SupernovaPhase::Ready => {}
             SupernovaPhase::Countdown => self.update_countdown(dt),
             SupernovaPhase::Dance => self.update_dance(dt, triggered),
+            SupernovaPhase::LavaWarning => self.update_lava_warning(dt),
             SupernovaPhase::Freeze => self.update_freeze(dt, active),
             SupernovaPhase::Drop => self.update_drop(dt),
             SupernovaPhase::Result => {}
@@ -256,14 +268,41 @@ impl SupernovaGame {
         self.freeze_progress = 0.0;
         self.freeze_elapsed = 0.0;
         self.freeze_move_time = 0.0;
+        self.countdown_remaining = 0.0;
+    }
+
+    fn begin_lava_warning(&mut self) {
+        self.phase = SupernovaPhase::LavaWarning;
+        self.phase_timer = SUPERNOVA_LAVA_WARNING_SECONDS;
+        self.countdown_remaining = SUPERNOVA_LAVA_WARNING_SECONDS;
+        self.freeze_progress = 0.0;
+        self.freeze_elapsed = 0.0;
+        self.freeze_move_time = 0.0;
     }
 
     fn begin_freeze_round(&mut self) {
         self.phase = SupernovaPhase::Freeze;
         self.phase_timer = SUPERNOVA_FREEZE_SECONDS;
+        self.countdown_remaining = 0.0;
         self.freeze_progress = 0.0;
         self.freeze_elapsed = 0.0;
         self.freeze_move_time = 0.0;
+    }
+
+    fn update_lava_warning(&mut self, dt: f32) {
+        self.phase_timer -= dt;
+        self.countdown_remaining = self.phase_timer.max(0.0);
+        self.drop_imminent = self.energy >= DROP_IMMINENT_ENERGY && self.energy < 1.0;
+
+        if self.phase_timer <= 0.0 {
+            self.begin_freeze_round();
+            return;
+        }
+
+        self.session_remaining -= dt;
+        if self.session_remaining <= 0.0 {
+            self.trigger_drop(SupernovaOutcome::TimeExpired);
+        }
     }
 
     fn update_dance(&mut self, dt: f32, triggered: [u32; PLAYER_CAPACITY]) {
@@ -278,6 +317,15 @@ impl SupernovaGame {
         // Decay cooldowns.
         for cooldown in self.hit_cooldown.iter_mut() {
             *cooldown = (*cooldown - dt).max(0.0);
+        }
+
+        self.drop_imminent = self.energy >= DROP_IMMINENT_ENERGY && self.energy < 1.0;
+
+        // Pull-to-Drop: squat / both-hands-down detonates the trembling core.
+        if self.drop_imminent && self.release_triggered(triggered) {
+            self.energy = 1.0;
+            self.trigger_drop(SupernovaOutcome::FullSupernova);
+            return;
         }
 
         // Count active players for co-op bonus.
@@ -330,16 +378,18 @@ impl SupernovaGame {
             self.players[i].energy_contributed += gain;
         }
 
+        self.drop_imminent = self.energy >= DROP_IMMINENT_ENERGY && self.energy < 1.0;
+
         // Full energy → supernova.
         if self.energy >= 1.0 {
             self.trigger_drop(SupernovaOutcome::FullSupernova);
             return;
         }
 
-        // Dance round over → FREEZE!
+        // Dance round over → 5→1 Floor is Lava warning → FREEZE!
         self.phase_timer -= dt;
         if self.phase_timer <= 0.0 {
-            self.begin_freeze_round();
+            self.begin_lava_warning();
             return;
         }
 
@@ -355,6 +405,7 @@ impl SupernovaGame {
         self.phase_timer -= dt;
         self.freeze_progress =
             (self.freeze_elapsed / SUPERNOVA_FREEZE_SECONDS).clamp(0.0, 1.0);
+        self.drop_imminent = self.energy >= DROP_IMMINENT_ENERGY && self.energy < 1.0;
 
         // Detect movement after the reaction-time grace period.
         let gameplay_mask = Action::GAMEPLAY_MASK;
@@ -430,6 +481,15 @@ impl SupernovaGame {
         self.beat_progress <= ON_BEAT_WINDOW || self.beat_progress >= (1.0 - ON_BEAT_WINDOW)
     }
 
+    fn release_triggered(&self, triggered: [u32; PLAYER_CAPACITY]) -> bool {
+        self.players
+            .iter()
+            .zip(triggered.iter())
+            .any(|(player, &mask)| {
+                player.evaluated && (mask & Action::DROP_RELEASE_MASK) != 0
+            })
+    }
+
     /// Request replay (from Result phase).
     pub fn request_replay(&mut self) -> bool {
         if self.phase != SupernovaPhase::Result {
@@ -492,7 +552,7 @@ mod tests {
     fn countdown_transitions_to_dance() {
         let mut game = SupernovaGame::new();
         game.start_run(eval_one());
-        game.update(2.1, NO_ACTIVE, [0; PLAYER_CAPACITY]);
+        game.update(SUPERNOVA_COUNTDOWN_SECONDS + 0.1, NO_ACTIVE, [0; PLAYER_CAPACITY]);
         assert_eq!(game.phase, SupernovaPhase::Dance);
         assert_eq!(game.round, 1);
     }
@@ -501,7 +561,7 @@ mod tests {
     fn on_beat_action_adds_energy() {
         let mut game = SupernovaGame::new();
         game.start_run(eval_one());
-        game.update(2.1, NO_ACTIVE, [0; PLAYER_CAPACITY]);
+        game.update(SUPERNOVA_COUNTDOWN_SECONDS + 0.1, NO_ACTIVE, [0; PLAYER_CAPACITY]);
         assert_eq!(game.phase, SupernovaPhase::Dance);
 
         game.beat_progress = 0.0;
@@ -517,7 +577,7 @@ mod tests {
     fn off_beat_action_adds_less_energy_and_resets_combo() {
         let mut game = SupernovaGame::new();
         game.start_run(eval_one());
-        game.update(2.1, NO_ACTIVE, [0; PLAYER_CAPACITY]);
+        game.update(SUPERNOVA_COUNTDOWN_SECONDS + 0.1, NO_ACTIVE, [0; PLAYER_CAPACITY]);
 
         game.beat_accumulator = SUPERNOVA_BEAT_SECONDS * 0.5;
         game.beat_progress = 0.5;
@@ -529,13 +589,17 @@ mod tests {
     }
 
     #[test]
-    fn dance_round_transitions_to_freeze() {
+    fn dance_round_transitions_through_lava_warning_to_freeze() {
         let mut game = SupernovaGame::new();
         game.start_run(eval_one());
-        game.update(2.1, NO_ACTIVE, [0; PLAYER_CAPACITY]);
+        game.update(SUPERNOVA_COUNTDOWN_SECONDS + 0.1, NO_ACTIVE, [0; PLAYER_CAPACITY]);
         assert_eq!(game.phase, SupernovaPhase::Dance);
 
         game.update(SUPERNOVA_DANCE_SECONDS + 0.1, NO_ACTIVE, [0; PLAYER_CAPACITY]);
+        assert_eq!(game.phase, SupernovaPhase::LavaWarning);
+        assert!(game.countdown_remaining > 4.0);
+
+        game.update(SUPERNOVA_LAVA_WARNING_SECONDS + 0.1, NO_ACTIVE, [0; PLAYER_CAPACITY]);
         assert_eq!(game.phase, SupernovaPhase::Freeze);
     }
 
@@ -543,8 +607,9 @@ mod tests {
     fn perfect_freeze_awards_star_and_energy() {
         let mut game = SupernovaGame::new();
         game.start_run(eval_one());
-        game.update(2.1, NO_ACTIVE, [0; PLAYER_CAPACITY]);
+        game.update(SUPERNOVA_COUNTDOWN_SECONDS + 0.1, NO_ACTIVE, [0; PLAYER_CAPACITY]);
         game.update(SUPERNOVA_DANCE_SECONDS + 0.1, NO_ACTIVE, [0; PLAYER_CAPACITY]);
+        game.update(SUPERNOVA_LAVA_WARNING_SECONDS + 0.1, NO_ACTIVE, [0; PLAYER_CAPACITY]);
         assert_eq!(game.phase, SupernovaPhase::Freeze);
 
         // Hold perfectly still for the whole freeze.
@@ -560,13 +625,15 @@ mod tests {
     fn moving_during_freeze_loses_star() {
         let mut game = SupernovaGame::new();
         game.start_run(eval_one());
-        game.update(2.1, NO_ACTIVE, [0; PLAYER_CAPACITY]);
+        game.update(SUPERNOVA_COUNTDOWN_SECONDS + 0.1, NO_ACTIVE, [0; PLAYER_CAPACITY]);
         game.update(SUPERNOVA_DANCE_SECONDS + 0.1, NO_ACTIVE, [0; PLAYER_CAPACITY]);
+        game.update(SUPERNOVA_LAVA_WARNING_SECONDS + 0.1, NO_ACTIVE, [0; PLAYER_CAPACITY]);
         assert_eq!(game.phase, SupernovaPhase::Freeze);
 
-        // Move (hold Jump active) for longer than the move budget.
+        // Move after grace for longer than the move budget.
         let moving_active = [Action::Jump.mask(), 0, 0, 0];
-        game.update(0.5, moving_active, [0; PLAYER_CAPACITY]);
+        game.update(FREEZE_GRACE_SECONDS + 0.05, NO_ACTIVE, [0; PLAYER_CAPACITY]);
+        game.update(FREEZE_MOVE_BUDGET + 0.15, moving_active, [0; PLAYER_CAPACITY]);
         assert!(game.freeze_wobble);
         game.update(SUPERNOVA_FREEZE_SECONDS, NO_ACTIVE, [0; PLAYER_CAPACITY]);
         assert_eq!(game.freeze_stars, 0); // no star
@@ -576,13 +643,14 @@ mod tests {
     fn brief_jitter_during_freeze_is_forgiven() {
         let mut game = SupernovaGame::new();
         game.start_run(eval_one());
-        game.update(2.1, NO_ACTIVE, [0; PLAYER_CAPACITY]);
+        game.update(SUPERNOVA_COUNTDOWN_SECONDS + 0.1, NO_ACTIVE, [0; PLAYER_CAPACITY]);
         game.update(SUPERNOVA_DANCE_SECONDS + 0.1, NO_ACTIVE, [0; PLAYER_CAPACITY]);
+        game.update(SUPERNOVA_LAVA_WARNING_SECONDS + 0.1, NO_ACTIVE, [0; PLAYER_CAPACITY]);
         assert_eq!(game.phase, SupernovaPhase::Freeze);
 
         // A single brief jitter frame (within move budget) should be forgiven.
         let moving_active = [Action::Jump.mask(), 0, 0, 0];
-        game.update(0.5, NO_ACTIVE, [0; PLAYER_CAPACITY]); // grace + still
+        game.update(FREEZE_GRACE_SECONDS + 0.05, NO_ACTIVE, [0; PLAYER_CAPACITY]);
         game.update(0.1, moving_active, [0; PLAYER_CAPACITY]); // brief jitter
         game.update(SUPERNOVA_FREEZE_SECONDS, NO_ACTIVE, [0; PLAYER_CAPACITY]);
         assert_eq!(game.freeze_stars, 1); // still perfect
@@ -592,7 +660,7 @@ mod tests {
     fn full_energy_triggers_supernova() {
         let mut game = SupernovaGame::new();
         game.start_run(eval_one());
-        game.update(2.1, NO_ACTIVE, [0; PLAYER_CAPACITY]);
+        game.update(SUPERNOVA_COUNTDOWN_SECONDS + 0.1, NO_ACTIVE, [0; PLAYER_CAPACITY]);
 
         game.energy = 0.99;
         game.beat_progress = 0.0;
@@ -605,10 +673,70 @@ mod tests {
     }
 
     #[test]
+    fn drop_imminent_when_core_near_full() {
+        let mut game = SupernovaGame::new();
+        game.start_run(eval_one());
+        game.update(SUPERNOVA_COUNTDOWN_SECONDS + 0.1, NO_ACTIVE, [0; PLAYER_CAPACITY]);
+        assert_eq!(game.phase, SupernovaPhase::Dance);
+
+        game.energy = 0.85;
+        game.update(0.001, NO_ACTIVE, [0; PLAYER_CAPACITY]);
+        assert!(game.drop_imminent);
+        assert_eq!(game.phase, SupernovaPhase::Dance);
+
+        game.energy = 0.4;
+        game.update(0.001, NO_ACTIVE, [0; PLAYER_CAPACITY]);
+        assert!(!game.drop_imminent);
+    }
+
+    #[test]
+    fn squat_pulls_drop_when_imminent() {
+        let mut game = SupernovaGame::new();
+        game.start_run(eval_one());
+        game.update(SUPERNOVA_COUNTDOWN_SECONDS + 0.1, NO_ACTIVE, [0; PLAYER_CAPACITY]);
+        assert_eq!(game.phase, SupernovaPhase::Dance);
+
+        game.energy = 0.86;
+        game.update(0.001, NO_ACTIVE, [Action::Squat.mask(), 0, 0, 0]);
+        assert_eq!(game.phase, SupernovaPhase::Drop);
+        assert_eq!(game.outcome, Some(SupernovaOutcome::FullSupernova));
+        assert!(game.drop_triggered);
+        assert_eq!(game.energy, 1.0);
+    }
+
+    #[test]
+    fn hands_down_pulls_drop_when_imminent() {
+        let mut game = SupernovaGame::new();
+        game.start_run(eval_one());
+        game.update(SUPERNOVA_COUNTDOWN_SECONDS + 0.1, NO_ACTIVE, [0; PLAYER_CAPACITY]);
+
+        game.energy = 0.9;
+        game.update(0.001, NO_ACTIVE, [Action::HandsDown.mask(), 0, 0, 0]);
+        assert_eq!(game.phase, SupernovaPhase::Drop);
+        assert_eq!(game.outcome, Some(SupernovaOutcome::FullSupernova));
+    }
+
+    #[test]
+    fn squat_does_not_force_drop_before_imminent() {
+        let mut game = SupernovaGame::new();
+        game.start_run(eval_one());
+        game.update(SUPERNOVA_COUNTDOWN_SECONDS + 0.1, NO_ACTIVE, [0; PLAYER_CAPACITY]);
+
+        game.energy = 0.4;
+        game.beat_progress = 0.0;
+        game.beat_accumulator = 0.0;
+        game.update(0.001, NO_ACTIVE, [Action::Squat.mask(), 0, 0, 0]);
+        assert_eq!(game.phase, SupernovaPhase::Dance);
+        assert!(!game.drop_triggered);
+        assert!(game.energy > 0.4);
+        assert!(game.energy < 1.0);
+    }
+
+    #[test]
     fn drop_transitions_to_result() {
         let mut game = SupernovaGame::new();
         game.start_run(eval_one());
-        game.update(2.1, NO_ACTIVE, [0; PLAYER_CAPACITY]);
+        game.update(SUPERNOVA_COUNTDOWN_SECONDS + 0.1, NO_ACTIVE, [0; PLAYER_CAPACITY]);
         game.energy = 1.0;
         game.beat_progress = 0.0;
         game.beat_accumulator = 0.0;
@@ -623,7 +751,7 @@ mod tests {
     fn replay_from_result_restarts() {
         let mut game = SupernovaGame::new();
         game.start_run(eval_one());
-        game.update(2.1, NO_ACTIVE, [0; PLAYER_CAPACITY]);
+        game.update(SUPERNOVA_COUNTDOWN_SECONDS + 0.1, NO_ACTIVE, [0; PLAYER_CAPACITY]);
         game.energy = 1.0;
         game.beat_progress = 0.0;
         game.beat_accumulator = 0.0;
@@ -643,7 +771,7 @@ mod tests {
     fn coop_two_players_pump_faster() {
         let mut solo = SupernovaGame::new();
         solo.start_run(eval_one());
-        solo.update(2.1, NO_ACTIVE, [0; PLAYER_CAPACITY]);
+        solo.update(SUPERNOVA_COUNTDOWN_SECONDS + 0.1, NO_ACTIVE, [0; PLAYER_CAPACITY]);
         solo.beat_progress = 0.0;
         solo.beat_accumulator = 0.0;
         solo.update(0.001, NO_ACTIVE, [Action::Jump.mask(), 0, 0, 0]);
@@ -651,7 +779,7 @@ mod tests {
 
         let mut coop = SupernovaGame::new();
         coop.start_run(eval_two());
-        coop.update(2.1, NO_ACTIVE, [0; PLAYER_CAPACITY]);
+        coop.update(SUPERNOVA_COUNTDOWN_SECONDS + 0.1, NO_ACTIVE, [0; PLAYER_CAPACITY]);
         coop.beat_progress = 0.0;
         coop.beat_accumulator = 0.0;
         coop.update(0.001, NO_ACTIVE, [Action::Jump.mask(), Action::Jump.mask(), 0, 0]);
@@ -665,7 +793,7 @@ mod tests {
         let mut game = SupernovaGame::new();
         game.best_score = 100;
         game.start_run(eval_one());
-        game.update(2.1, NO_ACTIVE, [0; PLAYER_CAPACITY]);
+        game.update(SUPERNOVA_COUNTDOWN_SECONDS + 0.1, NO_ACTIVE, [0; PLAYER_CAPACITY]);
         game.energy = 1.0;
         game.beat_progress = 0.0;
         game.beat_accumulator = 0.0;

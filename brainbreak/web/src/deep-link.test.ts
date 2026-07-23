@@ -26,7 +26,9 @@ describe('deep-link parsing', () => {
     expect(parseDeepLink('?mode=mirror&game=star-catch')).toEqual({ mode: 'mirror', game: 'star-catch' });
   });
 
-  it('recognizes exactly the five mode keys', () => {
+  it('recognizes product families and legacy mode keys', () => {
+    expect(isDeepLinkMode('brainbreak')).toBe(true);
+    expect(isDeepLinkMode('ar')).toBe(true);
     expect(isDeepLinkMode('random')).toBe(true);
     expect(isDeepLinkMode('mirror')).toBe(true);
     expect(isDeepLinkMode('strike')).toBe(true);

@@ -1,15 +1,19 @@
 #[cfg(target_arch = "wasm32")]
 mod config_render;
+mod guide_coach;
 mod hud;
+mod juice;
 mod overlays;
 mod platform;
 mod supernova_render;
 mod visuals;
 
 use brainbreak_core::{
-    MotionInputFrame, MotionRuntime, RunnerFeedback, RunnerGame, RunnerPhase,
+    MotionInputFrame, MotionRuntime, RunnerGame, RunnerPhase,
     SupernovaGame, SupernovaOutcome, SupernovaPhase,
 };
+#[cfg(target_arch = "wasm32")]
+use brainbreak_core::RunnerFeedback;
 #[cfg(target_arch = "wasm32")]
 use brainbreak_core::{ConfigGame, RunnerOutcome};
 use macroquad::prelude::*;
@@ -43,8 +47,39 @@ fn is_supernova_mode() -> bool {
     }
 }
 
+/// Prefer payload string over miniquad's `{:?}` hook (shows `Any { .. }`).
+#[cfg(target_arch = "wasm32")]
+fn install_readable_panic_hook() {
+    use std::ffi::CString;
+
+    #[link(wasm_import_module = "env")]
+    unsafe extern "C" {
+        fn console_error(msg: *const i8);
+    }
+
+    std::panic::set_hook(Box::new(|info| {
+        let payload = info
+            .payload()
+            .downcast_ref::<&str>()
+            .map(|s| (*s).to_owned())
+            .or_else(|| info.payload().downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "non-string panic payload".to_owned());
+        let location = info
+            .location()
+            .map(|loc| format!("{}:{}:{}", loc.file(), loc.line(), loc.column()))
+            .unwrap_or_else(|| "unknown".to_owned());
+        let message = format!("BrainBreak panic: {payload} @ {location}");
+        if let Ok(c_message) = CString::new(message) {
+            unsafe { console_error(c_message.as_ptr()) };
+        }
+    }));
+}
+
 #[macroquad::main(window_conf)]
 async fn main() {
+    #[cfg(target_arch = "wasm32")]
+    install_readable_panic_hook();
+
     let mut motion = MotionRuntime::default();
     let mut runner = RunnerGame::new();
     let mut stage = RunnerStage::default();
@@ -59,6 +94,7 @@ async fn main() {
     // Party event tracking (music/voice cues to JS).
     let mut snova_phase_sent = SupernovaPhase::Ready;
     let mut snova_countdown_sent: u8 = u8::MAX;
+    let mut snova_imminent_sent = false;
 
     // Custom config-driven game state
     #[cfg(target_arch = "wasm32")]
@@ -160,15 +196,25 @@ async fn main() {
             }
             supernova.update(dt, active, triggered);
 
+            // Quantized hit SFX with combo pitch (same bus as Neon Runner).
+            for (player, feedback) in supernova.feedback.into_iter().enumerate() {
+                if !feedback.hit {
+                    continue;
+                }
+                let kind = if feedback.on_beat { 3 } else { 1 };
+                platform::play_feedback(kind, u32::from(supernova.players[player].combo));
+            }
+
             // Emit party events (music/voice cues) to the JS party director.
-            // Phase-change block runs first so entering Countdown resets the
-            // countdown tracker (avoids double-sending the first tick).
+            // Phase-change block runs first so entering Countdown / LavaWarning
+            // resets the countdown tracker (avoids double-sending the first tick).
             if supernova.phase != snova_phase_sent {
                 let event = match supernova.phase {
                     SupernovaPhase::Dance => Some(2),
                     SupernovaPhase::Freeze => Some(3),
                     SupernovaPhase::Drop => Some(5),
                     SupernovaPhase::Result => Some(6),
+                    SupernovaPhase::LavaWarning => Some(8),
                     _ => None,
                 };
                 if let Some(kind) = event {
@@ -182,12 +228,18 @@ async fn main() {
                     };
                     platform::supernova_event(kind, value);
                 }
-                if supernova.phase == SupernovaPhase::Countdown {
+                if matches!(
+                    supernova.phase,
+                    SupernovaPhase::Countdown | SupernovaPhase::LavaWarning
+                ) {
                     snova_countdown_sent = u8::MAX;
                 }
                 snova_phase_sent = supernova.phase;
             }
-            if supernova.phase == SupernovaPhase::Countdown {
+            if matches!(
+                supernova.phase,
+                SupernovaPhase::Countdown | SupernovaPhase::LavaWarning
+            ) {
                 let num = supernova.countdown_remaining.ceil() as u8;
                 if num != snova_countdown_sent && num >= 1 {
                     snova_countdown_sent = num;
@@ -197,13 +249,21 @@ async fn main() {
             if supernova.perfect_freeze {
                 platform::supernova_event(4, 0);
             }
+            if supernova.phase == SupernovaPhase::Dance && supernova.drop_imminent {
+                if !snova_imminent_sent {
+                    platform::supernova_event(7, 0);
+                    snova_imminent_sent = true;
+                }
+            } else {
+                snova_imminent_sent = false;
+            }
 
             let audio = platform::audio_visual();
             let reduced = platform::reduce_motion();
             supernova_stage.update(dt, &supernova, audio, reduced);
 
             clear_background(Color::from_rgba(4, 5, 20, 255));
-            supernova_stage.draw(&supernova, audio, reduced);
+            supernova_stage.draw(&supernova, audio, reduced, poses.as_slice());
             next_frame().await;
             continue;
         }
@@ -279,25 +339,21 @@ async fn main() {
                 platform::play_feedback(kind, u32::from(runner.players[player].combo));
             }
         }
-        stage.update(dt, &runner);
+        stage.update(dt, &runner, platform::reduce_motion());
 
         let width = screen_width();
         let height = screen_height();
         let audio = platform::audio_visual();
         let reduced = platform::reduce_motion();
-        let shake = if reduced {
-            Vec2::ZERO
-        } else {
-            let crash = runner.feedback.contains(&RunnerFeedback::Crash);
-            if crash {
-                vec2(
-                    (get_time() as f32 * 91.0).sin() * 5.0,
-                    (get_time() as f32 * 73.0).cos() * 3.0,
-                )
-            } else {
-                Vec2::ZERO
-            }
-        };
+        let mut shake = stage.shake_offset(get_time() as f32, reduced);
+        if !reduced && runner.phase == RunnerPhase::Running && audio.pulse > 0.42 {
+            // Downbeat micro-tremble — body feels the 140 BPM kick.
+            let kick = (audio.pulse - 0.42) * 4.2;
+            shake += vec2(
+                (get_time() as f32 * 88.0).sin() * kick,
+                (get_time() as f32 * 71.0).cos() * kick * 0.55,
+            );
+        }
         clear_background(Color::from_rgba(4, 5, 20, 255));
         let running_surface = (runner.phase == RunnerPhase::Running).then(|| {
             hud::running_surface_layout(
@@ -707,32 +763,36 @@ mod layout_tests {
     fn result_layout_stays_inside_target_viewports() {
         for (width, height) in VIEWPORTS {
             let layout = result_layout(width, height);
+            let min_edge = width.min(height) * 0.20;
             assert!(layout.panel.x >= 0.0);
             assert!(layout.panel.y >= 0.0);
             assert!(layout.panel.x + layout.panel.w <= width);
             assert!(layout.panel.y + layout.panel.h <= height);
-            assert!(layout.chip_width >= 90.0);
+            assert!(layout.chip_height + 0.5 >= min_edge);
+            assert!(layout.chip_width.min(layout.chip_height) + 0.5 >= min_edge * 0.55);
             assert!(layout.chip_y >= layout.panel.y);
-            assert!(layout.chip_y + layout.chip_height < layout.choose_y);
-            assert!(layout.choose_y + 24.0 <= layout.panel.y + layout.panel.h);
+            assert!(layout.chip_y + layout.chip_height < layout.choose_y + 1.0);
+            assert!(layout.choose_y <= layout.panel.y + layout.panel.h);
             for index in 0..3 {
                 let chip = result_chip_rect(layout, index);
-                assert!(chip.x >= layout.panel.x);
-                assert!(chip.y >= layout.panel.y);
-                assert!(chip.x + chip.w <= layout.panel.x + layout.panel.w);
-                assert!(chip.y + chip.h <= layout.panel.y + layout.panel.h);
+                assert!(chip.x >= layout.panel.x - 0.5);
+                assert!(chip.y >= layout.panel.y - 0.5);
+                assert!(chip.x + chip.w <= layout.panel.x + layout.panel.w + 0.5);
+                assert!(chip.y + chip.h <= layout.panel.y + layout.panel.h + 0.5);
                 let indicator = result_indicator_layout(chip);
-                assert!(indicator.center.x - indicator.radius >= chip.x);
-                assert!(indicator.center.x + indicator.radius <= chip.x + chip.w);
-                assert!(indicator.center.y - indicator.radius >= chip.y);
-                assert!(indicator.lock_body.y + indicator.lock_body.h <= chip.y + chip.h);
+                assert!(indicator.center.x - indicator.radius >= chip.x - 0.5);
+                assert!(indicator.center.x + indicator.radius <= chip.x + chip.w + 0.5);
+                assert!(indicator.center.y - indicator.radius >= chip.y - 0.5);
+                assert!(indicator.lock_body.y + indicator.lock_body.h <= chip.y + chip.h + 0.5);
             }
         }
         assert_eq!(
             result_title(Some(RunnerOutcome::BreakComplete)),
-            "BREAK COMPLETE"
+            "GLOW COMPLETE"
         );
-        assert_eq!(result_title(Some(RunnerOutcome::EnergySpent)), "NICE RUN!");
+        assert_eq!(result_title(Some(RunnerOutcome::EnergySpent)), "AFTERGLOW!");
+        assert_eq!(crate::overlays::result_share_hint(), "");
+        assert_eq!(crate::overlays::result_action_hint(), "");
     }
 
     #[test]

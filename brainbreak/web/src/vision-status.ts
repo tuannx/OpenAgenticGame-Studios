@@ -71,7 +71,7 @@ export function presentVisionStatus(status: VisionStatus): VisionStatusPresentat
       return {
         phase: 'calibrating',
         camera: `${status.backend.toUpperCase()} • calibrating`,
-        ready: 'STAND 1.5–2.5M AWAY • KEEP YOUR FULL BODY IN FRAME',
+        ready: 'STEP BACK · FULL BODY IN FRAME',
       };
     case 'tracking':
       return {

@@ -22,6 +22,8 @@ import {
 } from './vision-status';
 import { GAME_MODE_PRESENTATION, modeLabel } from './launcher-controller';
 import type { LaunchMode } from './launcher-controller';
+import { partyDirector } from './party-voice';
+import { productFamilyForMode } from './product-family';
 
 export interface ReadyDeps {
   readyGate: HTMLElement;
@@ -41,7 +43,9 @@ export interface ReadyDeps {
   visionLoader: VisionModuleLoader;
   tasteStore: LocalTasteStore;
   availablePlayableModes: readonly PlayableGameMode[];
+  readyModes: () => readonly PlayableGameMode[];
   getSelectedModeKey: () => LaunchMode;
+  isRandomLaunch: () => boolean;
   resolvedLaunchMode: () => PlayableGameMode;
   selectModeByKey: (key: string) => void;
   setShellOwner: (owner: 'launcher' | 'ready' | 'guide' | 'gameplay') => void;
@@ -225,15 +229,35 @@ export class ReadyController {
     cameraCard.dataset.frameOrientation = geometry.orientation;
   }
 
+  private applyReadyLeanAffordance(modeCount: number): void {
+    const { readyGate } = this.deps;
+    const multi = modeCount > 1;
+    readyGate.dataset.lean = multi ? 'multi' : 'single';
+    const compass = readyGate.querySelector<HTMLElement>('.ready-action-compass');
+    if (compass) {
+      compass.setAttribute(
+        'aria-label',
+        multi
+          ? 'Lean to change game, raise a hand to play'
+          : 'Raise a hand to play',
+      );
+    }
+  }
+
   private renderReadyMode(mode: PlayableGameMode, fromRandom = false): void {
     const { readyModeTitle, readyPoseImg, readyGestureHint } = this.deps;
     const presentation = GAME_MODE_PRESENTATION[mode];
     readyModeTitle.textContent = fromRandom ? `RANDOM - ${modeLabel(mode)}` : modeLabel(mode);
     readyPoseImg.src = presentation.imageSrc;
     readyPoseImg.alt = `${presentation.title} game`;
-    readyGestureHint.textContent = mode === 'duo'
-      ? 'BOTH PLAYERS: RAISE A HAND'
-      : 'RAISE A HAND TO PLAY';
+    const duo = mode === 'duo';
+    readyGestureHint.setAttribute(
+      'aria-label',
+      duo ? 'Both raise hands and hold' : 'Raise a hand and hold',
+    );
+    readyGestureHint.innerHTML = duo
+      ? '<img src="/assets/cue_raise.svg" alt="" width="96" height="96" /><img src="/assets/cue_raise.svg" alt="" width="96" height="96" />'
+      : '<img src="/assets/cue_raise.svg" alt="" width="112" height="112" />';
   }
 
   private completeGestureLaunch(mode: PlayableGameMode, entry: 'gesture' | 'touch-fallback'): void {
@@ -245,6 +269,7 @@ export class ReadyController {
     if (!customActive) setSelectedGameMode(presentation.modeVal);
     this.deps.setGuideOnly(false);
     this.deps.setShellOwner('gameplay');
+    partyDirector.onGameplayStart(productFamilyForMode(mode));
     this.deps.cameraButton.textContent = 'Stop camera';
     this.deps.cameraStatus.textContent = customActive
       ? 'Custom game • camera evaluated'
@@ -269,8 +294,20 @@ export class ReadyController {
     const state = this.readyNavigation.update(framing.navigationPoses, nowMs);
     this.setReadyFallbackEnabled(state.trackedPlayers >= state.requiredPlayers);
     if (!hasCustomGameConfig() && state.mode !== previousMode) this.renderReadyMode(state.mode);
+    else if (!hasCustomGameConfig() && state.mode === 'duo') {
+      const needsPartner = state.trackedPlayers < 2;
+      this.deps.readyGestureHint.setAttribute(
+        'aria-label',
+        needsPartner ? 'Invite partner into frame' : 'Both raise hands and hold',
+      );
+      this.deps.readyGestureHint.innerHTML = needsPartner
+        ? '<img src="/assets/cue_raise.svg" alt="" width="112" height="112" style="opacity:0.45" />'
+        : '<img src="/assets/cue_raise.svg" alt="" width="96" height="96" /><img src="/assets/cue_raise.svg" alt="" width="96" height="96" />';
+      partyDirector.onDuoNeedsPartner(needsPartner);
+    }
     readyHoldRing.style.setProperty('--hold-angle', `${state.confirmProgress * 360}deg`);
     readyHoldRing.setAttribute('aria-valuenow', String(Math.round(state.confirmProgress * 100)));
+    partyDirector.onReadyHoldProgress(state.confirmProgress);
     const navigationPresentation = presentReadyNavigation(state, framingPresentation);
     readyGate.dataset.action = navigationPresentation.visualState;
     cameraStatus.textContent = navigationPresentation.status;
@@ -284,13 +321,18 @@ export class ReadyController {
       availablePlayableModes, setShellOwner, setGuideOnly, setCameraEvaluation,
     } = this.deps;
     setGuideOnly(false);
-    const startedFromRandom = this.deps.getSelectedModeKey() === 'random';
+    const startedFromRandom = this.deps.isRandomLaunch();
     const initialMode = this.deps.resolvedLaunchMode();
-    this.readyNavigation = new MotionNavigationController(initialMode, {}, availablePlayableModes);
+    const familyModes = this.deps.readyModes();
+    const navigationModes = familyModes.length > 0 ? familyModes : availablePlayableModes;
+    this.readyNavigation = new MotionNavigationController(initialMode, {}, navigationModes);
     this.framingCoach.reset();
+    this.applyReadyLeanAffordance(hasCustomGameConfig() ? 1 : navigationModes.length);
     if (hasCustomGameConfig()) {
       this.deps.readyModeTitle.textContent = 'MY GAME';
-      this.deps.readyGestureHint.textContent = 'RAISE A HAND TO PLAY';
+      this.deps.readyGestureHint.setAttribute('aria-label', 'Raise a hand and hold');
+      this.deps.readyGestureHint.innerHTML =
+        '<img src="/assets/cue_raise.svg" alt="" width="112" height="112" />';
     } else {
       this.renderReadyMode(initialMode, startedFromRandom);
     }
@@ -324,6 +366,7 @@ export class ReadyController {
         })(),
       ]);
       if (signal.aborted) return;
+      partyDirector.onReadyOpened(this.deps.getSelectedModeKey() === 'ar' ? 'ar' : 'brainbreak');
       this.deps.cameraButton.textContent = 'Stop camera';
     } catch (error) {
       if (isCameraStartCancelled(error)) return;

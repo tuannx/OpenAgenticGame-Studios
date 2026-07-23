@@ -11,7 +11,7 @@ describe('pose framing presentation', () => {
   it('distinguishes stable setup, Duo invitation, and active navigation', () => {
     expect(presentPoseFraming({ kind: 'steady' }).instruction).toContain('HOLD STILL');
     expect(presentPoseFraming({ kind: 'add-player', current: 1, required: 2 }).instruction).toContain('P2');
-    expect(presentPoseFraming({ kind: 'ready', players: 1 }).instruction).toContain('READY');
+    expect(presentPoseFraming({ kind: 'ready', players: 1 }).instruction).toContain('RAISE');
   });
 
   it('uses static shape-companion copy without emoji or bullet joins', () => {

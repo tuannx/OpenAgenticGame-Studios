@@ -10,14 +10,19 @@ RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }-C link-arg=--allow-undefined" \
   cargo build --manifest-path "$PROJECT_DIR/Cargo.toml" \
   --release --target wasm32-unknown-unknown -p brainbreak-game
 
-WASM_ARTIFACT="$PROJECT_DIR/target/wasm32-unknown-unknown/release/brainbreak-game.wasm"
+TARGET_DIR="${CARGO_TARGET_DIR:-$PROJECT_DIR/target}"
+WASM_ARTIFACT="$TARGET_DIR/wasm32-unknown-unknown/release/brainbreak-game.wasm"
+if [[ ! -f "$WASM_ARTIFACT" ]]; then
+  echo "Release WASM missing at $WASM_ARTIFACT" >&2
+  exit 1
+fi
 MAX_WASM_BYTES="${BRAINBREAK_MAX_WASM_BYTES:-962127}"
 WASM_BYTES="$(wc -c < "$WASM_ARTIFACT" | tr -d ' ')"
 if (( WASM_BYTES > MAX_WASM_BYTES )); then
   echo "Release WASM is $WASM_BYTES bytes; budget is $MAX_WASM_BYTES bytes" >&2
   exit 1
 fi
-echo "Release WASM: $WASM_BYTES / $MAX_WASM_BYTES bytes"
+echo "Release WASM: $WASM_BYTES / $MAX_WASM_BYTES bytes (from $TARGET_DIR)"
 WASM_HASH="$(shasum -a 256 "$WASM_ARTIFACT" | awk '{print substr($1, 1, 12)}')"
 find "$PUBLIC_DIR" -maxdepth 1 -type f \
   \( -name 'brainbreak-game.wasm' -o -name 'brainbreak-game-*.wasm' \) -delete

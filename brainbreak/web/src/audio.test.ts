@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  LAVA_FREEZE_TRACK,
   MUSIC_PLAYBACK_RATE,
+  RUNNER_TRACK,
   beatPulse,
   comboPitchRatio,
   normalizedBeatPhase,
+  trackForProductFamily,
 } from './audio';
 
 describe('music clock', () => {
@@ -28,5 +31,16 @@ describe('music clock', () => {
     expect(comboPitchRatio(20)).toBeCloseTo(2 ** (4 / 12));
     expect(comboPitchRatio(500)).toBeCloseTo(2 ** (4 / 12));
     expect(comboPitchRatio(Number.NaN)).toBe(1);
+  });
+
+  it('selects lava-freeze bed for AR and runner bed for BrainBreak', () => {
+    expect(trackForProductFamily('ar')).toBe(LAVA_FREEZE_TRACK);
+    expect(trackForProductFamily('brainbreak')).toBe(RUNNER_TRACK);
+    expect(LAVA_FREEZE_TRACK.bpm).toBe(140);
+    expect(RUNNER_TRACK.bpm).toBe(140);
+    expect(RUNNER_TRACK.title).toBe('Neon Jump Party');
+    expect(LAVA_FREEZE_TRACK.title).toBe('Lava Freeze Party');
+    expect(RUNNER_TRACK.url).toContain('neon-jump-party-');
+    expect(LAVA_FREEZE_TRACK.url).toContain('lava-freeze-party-');
   });
 });

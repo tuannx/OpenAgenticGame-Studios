@@ -69,4 +69,36 @@ describe('hands-free motion navigation', () => {
     navigator.update([pose({ lean: 0 })], 100);
     expect(navigator.update([pose({ lean: 0.08 })], 200).mode).toBe('mirror');
   });
+
+  it('auto-invites Duo when a second body enters frame', () => {
+    const navigator = new MotionNavigationController('mirror');
+
+    expect(navigator.update([pose()], 0).mode).toBe('mirror');
+    const invited = navigator.update([pose(), pose({ id: 2 })], 100);
+    expect(invited.mode).toBe('duo');
+    expect(invited.requiredPlayers).toBe(2);
+    expect(invited.trackedPlayers).toBe(2);
+  });
+
+  it('respects lean away from Duo while two bodies remain', () => {
+    const navigator = new MotionNavigationController('mirror');
+    navigator.update([pose(), pose({ id: 2 })], 0);
+    expect(navigator.selectedMode()).toBe('duo');
+
+    navigator.update([pose({ lean: 0 }), pose({ id: 2 })], 50);
+    const left = navigator.update([pose({ lean: -0.08 }), pose({ id: 2 })], 100);
+    expect(left.mode).not.toBe('duo');
+    expect(navigator.update([pose({ lean: 0 }), pose({ id: 2 })], 200).mode).not.toBe('duo');
+  });
+
+  it('re-invites Duo after the partner leaves and returns', () => {
+    const navigator = new MotionNavigationController('mirror');
+    navigator.update([pose(), pose({ id: 2 })], 0);
+    navigator.update([pose({ lean: 0 }), pose({ id: 2 })], 50);
+    navigator.update([pose({ lean: -0.08 }), pose({ id: 2 })], 100);
+    expect(navigator.selectedMode()).not.toBe('duo');
+
+    navigator.update([pose()], 200);
+    expect(navigator.update([pose(), pose({ id: 2 })], 300).mode).toBe('duo');
+  });
 });

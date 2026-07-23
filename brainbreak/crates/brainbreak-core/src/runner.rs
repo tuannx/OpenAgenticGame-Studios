@@ -6,10 +6,10 @@ use crate::pose::Action;
 
 pub const RUNNER_OBSTACLE_CAPACITY: usize = 12;
 
-const RUNNER_BPM: f32 = 126.0;
+const RUNNER_BPM: f32 = 140.0;
 const RUNNER_BEAT_SECONDS: f32 = 60.0 / RUNNER_BPM;
 pub const RUNNER_COLLISION_DISTANCE: f32 = 0.085;
-pub const RUNNER_COUNTDOWN_SECONDS: f32 = 2.0;
+pub const RUNNER_COUNTDOWN_SECONDS: f32 = 3.0;
 pub const RUNNER_SESSION_SECONDS: f32 = 90.0;
 
 /// Breath arc phase boundaries (seconds within the session).
@@ -552,11 +552,11 @@ impl RunnerGame {
             self.beat_accumulator -= RUNNER_BEAT_SECONDS;
             self.beat_index = self.beat_index.wrapping_add(1);
             let spawn_interval = if self.breath_intensity() > 0.75 {
-                2
-            } else if self.breath_intensity() > 0.35 {
                 3
-            } else {
+            } else if self.breath_intensity() > 0.35 {
                 4
+            } else {
+                5
             };
             if self.beat_index % spawn_interval == 1 {
                 let (kind, lane) = RUNNER_PATTERN[self.pattern_cursor % RUNNER_PATTERN.len()];

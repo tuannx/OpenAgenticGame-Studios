@@ -4,8 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
     <meta name="theme-color" content="#08041f" />
-    <meta name="description" content="A camera-controlled neon rhythm runner built with Macroquad and BrainBreak." />
-    <title>Neon Beat Runner • BrainBreak</title>
+    <meta name="description" content="Two camera rituals: BrainBreak neon runner and AR Supernova Drop — 60–90s sensory awe." />
+    <title>BrainBreak • AR Rituals</title>
   </head>
   <body class="launcher-open">
     <main id="game-shell">
@@ -55,12 +55,12 @@
           <a href="/studio.html">Open Studio</a>
           <strong id="room-status">Local party</strong>
           <section id="music-credit" aria-label="Music attribution">
-            <strong id="track-status">Special Spotlight • 126 BPM</strong>
+            <strong id="track-status">Neon Jump Party • 140 BPM</strong>
             <div class="music-credit-links">
-              <a href="https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1600067&amp;Search=Search" target="_blank" rel="noreferrer">Kevin MacLeod</a>
-              <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a>
+              <a id="track-source-link" href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noreferrer">Studio original</a>
+              <a id="track-license-link" href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noreferrer">CC0 1.0</a>
             </div>
-            <small>web-compressed</small>
+            <small>Danny Go taste/format inspiration only • original IP</small>
           </section>
         </div>
       </details>
@@ -77,8 +77,8 @@
               <p>Turn on the camera. Your body becomes the controller.</p>
               <small>No camera: no score • no evaluated collisions • no multiplayer</small>
               <div class="guide-demo-actions">
-                <button id="guide-demo-camera-button" type="button">TURN ON CAMERA</button>
-                <button id="guide-demo-back-button" type="button">CHOOSE ANOTHER GAME</button>
+                <button id="guide-demo-camera-button" type="button">CAMERA</button>
+                <button id="guide-demo-back-button" type="button">BACK</button>
               </div>
             </div>
           </div>
@@ -88,74 +88,54 @@
       <section id="motion-gate" role="dialog" aria-modal="true" aria-labelledby="motion-gate-title">
         <div class="motion-gate-card kid-friendly">
           <span class="gate-kicker">YOUR BODY IS THE CONTROLLER</span>
-          <h1 id="motion-gate-title">BRAINBREAK PARTY</h1>
+          <h1 id="motion-gate-title">TWO RITUALS</h1>
+          <p class="gate-subhead">Move · Freeze · Drop</p>
 
-          <!-- Mode Selector (Big Pictures & Icons) -->
-          <div class="mode-selection-grid" role="radiogroup" aria-label="Game mode selection">
-            <div class="mode-card active" data-mode="random" role="radio" aria-checked="true" tabindex="0">
-              <div class="mode-badge random-badge">RANDOM</div>
-              <img src="/assets/game_mode_random.webp" alt="Random Mode" class="mode-thumb" />
+          <!-- Two product families only — variants live inside Ready lean -->
+          <div class="mode-selection-grid two-rituals" role="radiogroup" aria-label="Game selection">
+            <div class="mode-card active" data-mode="brainbreak" role="radio" aria-checked="true" tabindex="0">
+              <div class="mode-badge">BRAINBREAK</div>
+              <img src="/assets/game_mode_mirror.webp" alt="BrainBreak Game" class="mode-thumb" />
               <div class="mode-info">
-                <h3>Random Fun!</h3>
+                <h3>BrainBreak Game</h3>
+                <p class="mode-blurb mode-blurb-icons" aria-hidden="true">
+                  <img src="/assets/cue_jump.svg" alt="" width="56" height="56" />
+                  <img src="/assets/cue_squat.svg" alt="" width="56" height="56" />
+                  <img src="/assets/cue_clap.svg" alt="" width="56" height="56" />
+                </p>
               </div>
             </div>
 
-            <div class="mode-card" data-mode="mirror" role="radio" aria-checked="false" tabindex="-1">
-              <div class="mode-badge">CLASSIC</div>
-              <img src="/assets/game_mode_mirror.webp" alt="Mirror Beat" class="mode-thumb" />
+            <div class="mode-card" data-mode="ar" role="radio" aria-checked="false" tabindex="-1">
+              <div class="mode-badge">AR</div>
+              <img src="/assets/game_mode_supernova.webp" alt="Supernova" class="mode-thumb" />
               <div class="mode-info">
-                <h3>Mirror Beat</h3>
-              </div>
-            </div>
-
-            <div class="mode-card" data-mode="strike" role="radio" aria-checked="false" tabindex="-1">
-              <div class="mode-badge">SPEED</div>
-              <img src="/assets/game_mode_strike.webp" alt="Beat Strike" class="mode-thumb" />
-              <div class="mode-info">
-                <h3>Beat Strike</h3>
-              </div>
-            </div>
-
-            <div class="mode-card" data-mode="duo" role="radio" aria-checked="false" tabindex="-1">
-              <div class="mode-badge">2 PLAYERS</div>
-              <img src="/assets/game_mode_duo.webp" alt="Duo Groove" class="mode-thumb" />
-              <div class="mode-info">
-                <h3>Duo Groove</h3>
-                <p class="mode-unavailable-reason">Needs 2-person camera support</p>
-              </div>
-            </div>
-
-            <div class="mode-card" data-mode="supernova" role="radio" aria-checked="false" tabindex="-1">
-              <div class="mode-badge">PARTY</div>
-              <img src="/assets/game_mode_supernova.webp" alt="Supernova Drop" class="mode-thumb" />
-              <div class="mode-info">
-                <h3>Supernova Drop</h3>
+                <h3>Supernova</h3>
+                <p class="mode-blurb mode-blurb-icons" aria-hidden="true">
+                  <img src="/assets/cue_go.svg" alt="" width="56" height="56" />
+                  <img src="/assets/cue_lava.svg" alt="" width="56" height="56" />
+                  <img src="/assets/cue_freeze.svg" alt="" width="56" height="56" />
+                </p>
               </div>
             </div>
           </div>
-
-          <!-- Custom games from Studio (populated by JS from localStorage) -->
-          <div id="custom-games-section" class="mode-selection-grid" style="display:none" role="group" aria-label="My custom games">
-          </div>
-
-          <a id="studio-quick-link" href="/studio.html" class="studio-quick-link">
-            Open Studio — build your own game
-          </a>
 
           <!-- Visual setup shares the same neon cyber-party art direction as the mode cards. -->
           <div class="visual-setup-card">
             <img src="/assets/phone_placement_guide.webp" alt="Place the device sideways, stand about two meters away, and keep your full body in frame" class="setup-kids-img" />
           </div>
 
-          <button id="primary-camera-button" type="button" class="big-action-btn">
-            TURN ON CAMERA
-          </button>
-          <p class="zero-touch-note">After this tap: lean to choose • raise a hand to play • hold both hands up to pause</p>
-          <p id="taste-note" class="taste-note">Preferences stay on this device • no photos or poses are saved</p>
+          <div class="launcher-cta-row">
+            <button id="primary-camera-button" type="button" class="big-action-btn">
+              CAMERA
+            </button>
+            <button id="guide-only-button" type="button" class="sub-action-btn">
+              PREVIEW
+            </button>
+          </div>
+          <p class="zero-touch-note">✋ raise · ↔️ lean · 👥 duo</p>
+          <p id="taste-note" class="taste-note">Local only</p>
           <small id="gate-error" role="alert"></small>
-          <button id="guide-only-button" type="button" class="sub-action-btn">
-            Preview without camera • no score
-          </button>
         </div>
       </section>
 
@@ -163,9 +143,10 @@
       <section id="ready-gate" class="hidden" data-action="framing" role="dialog" aria-modal="true" aria-labelledby="ready-gate-title" tabindex="-1">
         <div class="ready-card">
           <div class="ready-header">
-            <span class="gate-kicker">NO TOUCH NEEDED</span>
-            <h2 id="ready-gate-title">CHOOSE WITH YOUR BODY</h2>
-            <p id="ready-mode-title">MIRROR BEAT</p>
+            <h2 id="ready-gate-title">
+              <img src="/assets/cue_raise.svg" alt="" width="96" height="96" class="ready-title-icon" />
+            </h2>
+            <p id="ready-mode-title" class="ready-mode-title-sr" aria-live="polite">MIRROR BEAT</p>
           </div>
 
           <div class="ready-visual-container">
@@ -175,7 +156,6 @@
           <div class="ready-action-compass" aria-label="Lean to change game, raise a hand to play">
             <div class="ready-lean-cue ready-lean-left" aria-hidden="true">
               <span class="ready-chevron"></span>
-              <small>LEAN</small>
             </div>
             <div class="ready-confirm-cue">
               <div id="ready-hold-ring" class="ready-hold-ring" role="progressbar" aria-label="Raise-hand confirmation progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
@@ -184,22 +164,23 @@
                   <path d="M32 20 L32 42 M32 27 L18 5 M32 28 L46 34 M32 42 L22 57 M32 42 L43 57"></path>
                 </svg>
               </div>
-              <strong id="ready-gesture-hint">RAISE A HAND TO PLAY</strong>
+              <strong id="ready-gesture-hint" class="ready-gesture-hint-icon" aria-label="Raise hand and hold">
+                <img src="/assets/cue_raise.svg" alt="" width="96" height="96" />
+              </strong>
             </div>
             <div class="ready-lean-cue ready-lean-right" aria-hidden="true">
               <span class="ready-chevron"></span>
-              <small>LEAN</small>
             </div>
           </div>
 
           <details class="ready-fallback">
-            <summary>Motion controls not working?</summary>
+            <summary>Touch?</summary>
             <div class="ready-actions">
               <button id="start-game-now-button" type="button" class="big-play-btn">
-                Tap to start (fallback)
+                START
               </button>
               <button id="back-to-modes-button" type="button" class="back-btn">
-                Choose another game
+                BACK
               </button>
             </div>
           </details>

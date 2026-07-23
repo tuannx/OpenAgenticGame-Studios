@@ -196,7 +196,7 @@ pub fn audio_visual() -> AudioVisual {
     };
     #[cfg(not(target_arch = "wasm32"))]
     {
-        let phase = ((get_time() as f32) * 126.0 / 60.0).fract();
+        let phase = ((get_time() as f32) * 140.0 / 60.0).fract();
         let distance = phase.min(1.0 - phase);
         AudioVisual {
             phase,
@@ -269,6 +269,18 @@ pub fn supernova_event(kind: u32, value: u32) {
     }
 }
 
+/// Quantized motion SFX with combo pitch. No-op on native builds.
+pub fn play_feedback(kind: u32, combo: u32) {
+    #[cfg(target_arch = "wasm32")]
+    unsafe {
+        bb_play_feedback(kind, combo);
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = (kind, combo);
+    }
+}
+
 // --- WASM-only re-exports for the game loop ---
 
 #[cfg(target_arch = "wasm32")]
@@ -294,11 +306,6 @@ pub fn record_run_outcome(mode: u32, outcome: u32) {
 #[cfg(target_arch = "wasm32")]
 pub fn set_game_mode(mode: u32) {
     unsafe { bb_set_game_mode(mode) };
-}
-
-#[cfg(target_arch = "wasm32")]
-pub fn play_feedback(kind: u32, combo: u32) {
-    unsafe { bb_play_feedback(kind, combo) };
 }
 
 // --- Mode Art ---

@@ -27,6 +27,7 @@ const ACTION = {
   leftUp: 1 << 4,
   rightUp: 1 << 5,
   clap: 1 << 6,
+  handsDown: 1 << 8,
 } as const;
 
 declare global {
@@ -110,6 +111,7 @@ function takeGamepadActions(player: number): number {
   if (pressed(4)) active |= ACTION.leftUp;
   if (pressed(5)) active |= ACTION.rightUp;
   if (pressed(2) || pressed(3)) active |= ACTION.clap;
+  if (pressed(6) || pressed(7)) active |= ACTION.handsDown;
   const triggered = active & ~previousGamepadMasks[player];
   previousGamepadMasks[player] = active;
   return triggered >>> 0;

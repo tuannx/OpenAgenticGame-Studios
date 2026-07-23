@@ -15,7 +15,7 @@ describe('vision status presentation', () => {
     expect(presentVisionStatus({ phase: 'calibrating', backend: 'webgl' })).toEqual({
       phase: 'calibrating',
       camera: 'WEBGL • calibrating',
-      ready: 'STAND 1.5–2.5M AWAY • KEEP YOUR FULL BODY IN FRAME',
+      ready: 'STEP BACK · FULL BODY IN FRAME',
     });
   });
 
@@ -35,7 +35,7 @@ describe('vision status presentation', () => {
       phase: 'calibrating',
       backend: 'webgl',
     })))
-      .toBe('STAND 1.5–2.5M AWAY • KEEP YOUR FULL BODY IN FRAME');
+      .toBe('STEP BACK · FULL BODY IN FRAME');
     expect(presentReadyCameraStatus(presentVisionStatus({ phase: 'tracking', players: 1 })))
       .toBeUndefined();
   });

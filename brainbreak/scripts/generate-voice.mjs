@@ -1,22 +1,12 @@
 #!/usr/bin/env node
 /**
- * Generate the Supernova Freeze Party voice-command clips with the Kokoro
- * small TTS model (~82M params, runs locally — no cloud API key needed).
+ * Generate coach VO clips with Kokoro small TTS (optional build-time assets).
  *
- * Why build-time clips instead of runtime SpeechSynthesis?
- *  - The command vocabulary is tiny and fixed (~9 phrases), so a handful of
- *    pre-rendered clips give a consistent, warm, kid-friendly voice on every
- *    device instead of whatever TTS voice the browser happens to ship.
- *  - Total payload is well under 1 MB; the player falls back to the device
- *    SpeechSynthesis API automatically when the clips are absent.
+ * Runtime prefers /voice clips when present; otherwise SpeechSynthesis.
  *
  * Usage:
- *   npm i -D kokoro-js            # one-time (downloads onnx runtime)
- *   node scripts/generate-voice.mjs
- *
- * The first run downloads the Kokoro ONNX weights (~80 MB, q8) from HuggingFace
- * into your local cache, then writes WAV clips + a manifest to web/public/voice/.
- * Deploy as usual — the browser client picks the clips up automatically.
+ *   npm i -D kokoro-js
+ *   npm run voice:gen
  */
 
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -26,20 +16,29 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const OUT_DIR = join(__dirname, '..', 'web', 'public', 'voice');
 
-/** Fixed Supernova command vocabulary. Keys match party-voice.ts speak() calls. */
+/** Keep in sync with web/src/party-voice-cues.ts */
 const PHRASES = [
+  { key: 'ritual_jump', text: 'Jump party!' },
+  { key: 'ritual_lava', text: 'Lava freeze!' },
+  { key: 'raise_hand', text: 'Hands up!' },
+  { key: 'hold', text: 'Hold!' },
+  { key: 'duo_invite', text: 'Bring a friend!' },
+  { key: 'lets_go', text: "Let's go!" },
+  { key: 'jump', text: 'Jump!' },
+  { key: 'clap_replay', text: 'Clap to play!' },
+  { key: 'count_3', text: 'Three!' },
   { key: 'count_2', text: 'Two!' },
   { key: 'count_1', text: 'One!' },
-  { key: 'go', text: 'Go go go!' },
-  { key: 'dance', text: 'Dance!' },
+  { key: 'go', text: 'Go!' },
+  { key: 'dance', text: 'Move!' },
+  { key: 'lava', text: 'Lava!' },
   { key: 'freeze', text: 'Freeze!' },
-  { key: 'great_job', text: 'Great job!' },
-  { key: 'super_nova', text: 'Super nova!' },
-  { key: 'wow', text: 'Wow! You did it!' },
-  { key: 'yay', text: 'Yay! Nice dancing!' },
+  { key: 'perfect', text: 'Perfect!' },
+  { key: 'drop', text: 'Drop!' },
+  { key: 'celebrate', text: 'You did it!' },
+  { key: 'nice_try', text: 'Nice try!' },
 ];
 
-/** Warm, clear female voice; slightly slower for kindergarten clarity. */
 const VOICE = process.env.KOKORO_VOICE || 'af_heart';
 const SPEED = Number(process.env.KOKORO_SPEED || '0.95');
 const MODEL_ID = process.env.KOKORO_MODEL || 'onnx-community/Kokoro-82M-v1.0-ONNX';
@@ -67,7 +66,7 @@ async function main() {
   for (const { key, text } of PHRASES) {
     const file = `${key}.wav`;
     const outPath = join(OUT_DIR, file);
-    process.stdout.write(`  ${key.padEnd(11)} "${text}" … `);
+    process.stdout.write(`  ${key.padEnd(14)} "${text}" … `);
     const audio = await tts.generate(text, { voice: VOICE, speed: SPEED });
     await audio.save(outPath);
     manifest[key] = file;
@@ -77,7 +76,6 @@ async function main() {
   writeFileSync(join(OUT_DIR, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
   console.log(`\nWrote ${PHRASES.length} clips + manifest.json to ${OUT_DIR}`);
   console.log('Voice:', VOICE, '| Speed:', SPEED);
-  console.log('\nOptional: compress WAV→MP3 with ffmpeg to shrink payload further.');
 }
 
 main().catch((err) => {

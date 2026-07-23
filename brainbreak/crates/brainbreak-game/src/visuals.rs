@@ -3,21 +3,20 @@ use brainbreak_core::{
 };
 use macroquad::prelude::*;
 
-const PARTICLE_CAPACITY: usize = 180;
-const BONES: [(usize, usize); 12] = [
-    (5, 6),
-    (5, 7),
-    (7, 9),
-    (6, 8),
-    (8, 10),
-    (5, 11),
-    (6, 12),
-    (11, 12),
-    (11, 13),
-    (13, 15),
-    (12, 14),
-    (14, 16),
-];
+use crate::guide_coach::{
+    draw_guide_coach_in, guide_coach_layout, GuidePose,
+};
+use crate::juice::{
+    draw_neon_silhouette, draw_pink_neon_silhouette, draw_soft_glow, hero_edge, BurstKind,
+    ParticlePool, ScreenShake, SpringScale,
+};
+
+/// Number of gradient rows in the backdrop (static, cached).
+const GRADIENT_ROWS: usize = 18;
+/// Number of building silhouettes (static, cached).
+const BUILDING_COUNT: usize = 24;
+/// Number of twinkling stars (dynamic, per-frame).
+const STAR_COUNT: usize = 38;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct AudioVisual {
@@ -50,13 +49,42 @@ struct ActionCueLayout {
     panel: Rect,
     icon_center: Vec2,
     icon_scale: f32,
-    text_x: f32,
-    verb_baseline: f32,
-    verb_font_size: f32,
-    lane_baseline: f32,
-    lane_font_size: f32,
     lane_slots: Rect,
     proximity_rail: Rect,
+}
+
+fn action_cue_layout(bounds: Rect) -> ActionCueLayout {
+    // One hero silhouette: edge ≥20% of min(viewport) — no tiny chrome panel.
+    let edge = hero_edge(bounds.w, bounds.h);
+    let panel_width = (bounds.w - 16.0).min(edge * 1.35);
+    let panel_height = edge * 1.18;
+    let panel = Rect::new(
+        bounds.x + (bounds.w - panel_width) * 0.5,
+        bounds.y + (bounds.h * 0.06).max(18.0),
+        panel_width,
+        panel_height,
+    );
+    let icon_scale = edge * 0.5;
+    ActionCueLayout {
+        panel,
+        icon_center: vec2(
+            panel.x + panel.w * 0.5,
+            panel.y + panel.h * 0.46,
+        ),
+        icon_scale,
+        lane_slots: Rect::new(
+            panel.x + panel.w * 0.18,
+            panel.y + panel.h * 0.82,
+            panel.w * 0.64,
+            (panel.h * 0.07).max(10.0),
+        ),
+        proximity_rail: Rect::new(
+            panel.x + panel.w * 0.12,
+            panel.y + panel.h - (panel.h * 0.05).max(6.0),
+            panel.w * 0.76,
+            (panel.h * 0.035).max(4.0),
+        ),
+    }
 }
 
 fn action_cue_presentation(kind: RunnerHazard) -> ActionCuePresentation {
@@ -77,40 +105,6 @@ fn action_cue_presentation(kind: RunnerHazard) -> ActionCuePresentation {
             verb: "CLAP",
             pictogram: ActionPictogram::Clap,
         },
-    }
-}
-
-fn action_cue_layout(bounds: Rect) -> ActionCueLayout {
-    let compact = bounds.h < 500.0;
-    let panel_width = (bounds.w - 24.0).min(if compact { 252.0 } else { 280.0 });
-    let panel_height = if compact { 94.0 } else { 112.0 };
-    let panel = Rect::new(
-        bounds.x + (bounds.w - panel_width) * 0.5,
-        bounds.y + if compact { 58.0 } else { 64.0 },
-        panel_width,
-        panel_height,
-    );
-    let icon_scale = if compact { 25.0 } else { 31.0 };
-    let text_x = panel.x + if compact { 78.0 } else { 88.0 };
-    ActionCueLayout {
-        panel,
-        icon_center: vec2(
-            panel.x + if compact { 42.0 } else { 48.0 },
-            panel.y + panel.h * 0.48,
-        ),
-        icon_scale,
-        text_x,
-        verb_baseline: panel.y + if compact { 35.0 } else { 42.0 },
-        verb_font_size: if compact { 25.0 } else { 30.0 },
-        lane_baseline: panel.y + if compact { 57.0 } else { 68.0 },
-        lane_font_size: if compact { 12.0 } else { 14.0 },
-        lane_slots: Rect::new(
-            text_x,
-            panel.y + if compact { 66.0 } else { 78.0 },
-            (panel.x + panel.w - 14.0 - text_x).min(126.0),
-            if compact { 13.0 } else { 16.0 },
-        ),
-        proximity_rail: Rect::new(panel.x + 14.0, panel.y + panel.h - 8.0, panel.w - 28.0, 4.0),
     }
 }
 
@@ -222,28 +216,25 @@ fn feedback_marker_layout(
     }
 }
 
-#[derive(Clone, Copy, Debug, Default)]
-struct Particle {
-    position: Vec2,
-    velocity: Vec2,
-    life: f32,
-    size: f32,
-    color: Color,
-}
-
 pub struct RunnerStage {
-    particles: [Particle; PARTICLE_CAPACITY],
-    particle_cursor: usize,
+    particles: ParticlePool,
+    shake: ScreenShake,
+    feedback_springs: [SpringScale; 4],
+    runner_springs: [SpringScale; 4],
     feedback_pulses: [FeedbackPulse; 4],
+    last_jump: [bool; 4],
     elapsed: f32,
 }
 
 impl Default for RunnerStage {
     fn default() -> Self {
         Self {
-            particles: std::array::from_fn(|_| Particle::default()),
-            particle_cursor: 0,
+            particles: ParticlePool::default(),
+            shake: ScreenShake::with_decay(28.0),
+            feedback_springs: std::array::from_fn(|_| SpringScale::new(1.0)),
+            runner_springs: std::array::from_fn(|_| SpringScale::new(1.0)),
             feedback_pulses: [FeedbackPulse::default(); 4],
+            last_jump: [false; 4],
             elapsed: 0.0,
         }
     }
@@ -259,28 +250,66 @@ fn stage_player_visibility(game: &RunnerGame) -> [bool; 4] {
 }
 
 impl RunnerStage {
-    pub fn update(&mut self, dt: f32, game: &RunnerGame) {
+    pub fn update(&mut self, dt: f32, game: &RunnerGame, reduce_motion: bool) {
         self.elapsed += dt;
-        for particle in &mut self.particles {
-            if particle.life <= 0.0 {
-                continue;
-            }
-            particle.life = (particle.life - dt * 1.35).max(0.0);
-            particle.position += particle.velocity * dt;
-            particle.velocity.y += dt * 0.24;
+        self.particles.update(dt);
+        self.shake.update(dt);
+        for spring in &mut self.feedback_springs {
+            spring.update(dt);
         }
+        for spring in &mut self.runner_springs {
+            spring.update(dt);
+        }
+
         for player in 0..4 {
             self.feedback_pulses[player].update(dt);
-            if game.feedback[player] != RunnerFeedback::None {
-                self.feedback_pulses[player].start(game.feedback[player]);
-                let color = feedback_color(game.feedback[player]);
-                self.spawn_burst(
-                    vec2(lane_normalized(game.players[player].lane), 0.82),
-                    color,
-                    22,
+            let jumping = game.players[player].jump_time > 0.0;
+            if jumping && !self.last_jump[player] && !reduce_motion {
+                self.runner_springs[player].punch(4.5);
+                self.particles.spawn_burst(
+                    vec2(lane_normalized(game.players[player].lane), 0.78),
+                    BurstKind::Jump,
+                    1.0,
                 );
+                self.shake.impulse(2.4);
+            }
+            self.last_jump[player] = jumping;
+
+            if game.feedback[player] == RunnerFeedback::None {
+                continue;
+            }
+            self.feedback_pulses[player].start(game.feedback[player]);
+            self.feedback_springs[player].punch(5.5);
+            let origin = vec2(lane_normalized(game.players[player].lane), 0.82);
+            match game.feedback[player] {
+                RunnerFeedback::Crash => {
+                    self.particles.spawn_burst(origin, BurstKind::Crash, 1.15);
+                    if !reduce_motion {
+                        self.shake.impulse(7.5);
+                        self.runner_springs[player].punch(-3.5);
+                    }
+                }
+                RunnerFeedback::BeatPickup => {
+                    self.particles.spawn_burst(origin, BurstKind::Beat, 1.1);
+                    if !reduce_motion {
+                        self.shake.impulse(3.2);
+                        self.runner_springs[player].punch(3.8);
+                    }
+                }
+                RunnerFeedback::Dodge => {
+                    self.particles.spawn_burst(origin, BurstKind::Hit, 1.0);
+                    if !reduce_motion {
+                        self.shake.impulse(2.0);
+                        self.runner_springs[player].punch(3.2);
+                    }
+                }
+                RunnerFeedback::None => {}
             }
         }
+    }
+
+    pub fn shake_offset(&self, time: f32, reduce_motion: bool) -> Vec2 {
+        self.shake.offset(time, reduce_motion)
     }
 
     pub fn draw(
@@ -291,6 +320,8 @@ impl RunnerStage {
         audio: AudioVisual,
         reduce_motion: bool,
     ) {
+        // Immediate-mode backdrop only — mid-frame `render_target`/`set_camera` on
+        // WASM re-enters miniquad's event handler RefCell and panics at wasm.rs:34.
         draw_backdrop(bounds, audio, self.elapsed, reduce_motion);
         draw_track(bounds, game, audio, self.elapsed);
         for obstacle in game
@@ -313,52 +344,23 @@ impl RunnerStage {
                 motion.players[player].pose,
                 self.feedback_pulses[player].intensity(),
                 audio,
+                self.runner_springs[player].value,
             );
         }
-        self.draw_particles(bounds, audio, reduce_motion);
+        self.particles
+            .draw_normalized(bounds, reduce_motion, audio.energy);
         if game.phase == brainbreak_core::RunnerPhase::Running {
             self.draw_feedback_markers(bounds, reduce_motion);
-            draw_next_cue(bounds, game.next_cue(), audio);
-        }
-    }
-
-    fn draw_particles(&self, bounds: Rect, audio: AudioVisual, reduce_motion: bool) {
-        let size_multiplier = if reduce_motion {
-            0.55
-        } else {
-            1.0 + audio.energy * 0.7
-        };
-        for particle in &self.particles {
-            if particle.life <= 0.0 {
-                continue;
-            }
-            let position = vec2(
-                bounds.x + particle.position.x * bounds.w,
-                bounds.y + particle.position.y * bounds.h,
+            // Shared stage: guide under user, both ~40% — match shapes in one place.
+            draw_guide_coach_in(
+                bounds,
+                guide_pose_for_obstacle(game.next_cue()),
+                self.elapsed,
+                audio.pulse,
+                reduce_motion,
             );
-            let mut color = particle.color;
-            color.a = particle.life.min(1.0) * 0.85;
-            draw_circle(
-                position.x,
-                position.y,
-                particle.size * size_multiplier * (0.5 + particle.life),
-                color,
-            );
-        }
-    }
-
-    fn spawn_burst(&mut self, origin: Vec2, color: Color, count: usize) {
-        for index in 0..count {
-            let angle = index as f32 / count as f32 * std::f32::consts::TAU;
-            let speed = 0.075 + (index % 7) as f32 * 0.012;
-            self.particles[self.particle_cursor] = Particle {
-                position: origin,
-                velocity: vec2(angle.cos() * speed, angle.sin() * speed - 0.055),
-                life: 0.62 + (index % 4) as f32 * 0.09,
-                size: 2.4 + (index % 3) as f32,
-                color,
-            };
-            self.particle_cursor = (self.particle_cursor + 1) % PARTICLE_CAPACITY;
+            draw_pink_user_overlay(bounds, game, motion, visible_players, audio);
+            draw_downbeat_wash(bounds, audio, reduce_motion);
         }
     }
 
@@ -378,6 +380,7 @@ impl RunnerStage {
                 pulse,
                 player,
                 reduce_motion,
+                self.feedback_springs[player].value,
             );
             visible_index += 1;
         }
@@ -389,6 +392,7 @@ fn draw_feedback_marker(
     pulse: FeedbackPulse,
     player: usize,
     reduce_motion: bool,
+    spring_scale: f32,
 ) {
     let Some(presentation) = feedback_presentation(pulse.kind) else {
         return;
@@ -399,12 +403,18 @@ fn draw_feedback_marker(
     let scale = if reduce_motion {
         1.0
     } else {
-        1.0 + (progress * std::f32::consts::PI).sin() * 0.12
+        spring_scale * (1.0 + (progress * std::f32::consts::PI).sin() * 0.06)
     };
     let radius = layout.radius * scale;
     let outcome_color = color_with_alpha(feedback_color(pulse.kind), fade);
     let identity_color = color_with_alpha(player_color(player), fade * 0.9);
 
+    draw_soft_glow(
+        layout.center,
+        radius * 1.35,
+        color_with_alpha(feedback_color(pulse.kind), fade * 0.55),
+        3,
+    );
     draw_circle(
         layout.center.x,
         layout.center.y,
@@ -421,27 +431,10 @@ fn draw_feedback_marker(
     draw_feedback_glyph(
         presentation.glyph,
         layout.center,
-        radius * 0.72,
+        radius * 0.78,
         outcome_color,
     );
-
-    let player_label = player_label(player);
-    let player_size = measure_text(player_label, None, 12, 1.0);
-    draw_text(
-        player_label,
-        layout.center.x - player_size.width * 0.5,
-        layout.player_baseline,
-        12.0,
-        identity_color,
-    );
-    let label_size = measure_text(presentation.label, None, layout.label_font_size as u16, 1.0);
-    draw_text(
-        presentation.label,
-        layout.center.x - label_size.width * 0.5,
-        layout.label_baseline,
-        layout.label_font_size,
-        outcome_color,
-    );
+    // Shape-only outcome — spoken coach + SFX carry meaning (no NICE/NEXT/BEAT words).
 }
 
 fn draw_feedback_glyph(glyph: FeedbackGlyph, center: Vec2, scale: f32, color: Color) {
@@ -511,13 +504,13 @@ pub fn draw_round_panel(bounds: Rect, color: Color) {
 fn draw_backdrop(bounds: Rect, audio: AudioVisual, elapsed: f32, reduce_motion: bool) {
     let top = Color::from_rgba(5, 7, 28, 255);
     let bottom = Color::from_rgba(44, 10, 72, 255);
-    for row in 0..18 {
-        let t = row as f32 / 17.0;
+    for row in 0..GRADIENT_ROWS {
+        let t = row as f32 / (GRADIENT_ROWS - 1) as f32;
         draw_rectangle(
             bounds.x,
             bounds.y + bounds.h * t,
             bounds.w,
-            bounds.h / 16.0 + 1.0,
+            bounds.h / (GRADIENT_ROWS - 1) as f32 + 1.0,
             mix_color(top, bottom, t),
         );
     }
@@ -525,10 +518,10 @@ fn draw_backdrop(bounds: Rect, audio: AudioVisual, elapsed: f32, reduce_motion: 
     let pulse = if reduce_motion {
         audio.energy * 0.2
     } else {
-        audio.pulse * 0.55 + audio.energy * 0.5
+        audio.pulse * 0.72 + audio.energy * 0.55
     };
     let sun = vec2(bounds.x + bounds.w * 0.5, bounds.y + bounds.h * 0.235);
-    let sun_radius = bounds.w.min(bounds.h) * (0.115 + pulse * 0.012);
+    let sun_radius = bounds.w.min(bounds.h) * (0.115 + pulse * 0.018);
     draw_circle(
         sun.x,
         sun.y,
@@ -548,8 +541,9 @@ fn draw_backdrop(bounds: Rect, audio: AudioVisual, elapsed: f32, reduce_motion: 
     }
 
     let horizon = bounds.y + bounds.h * 0.31;
-    for building in 0..24 {
-        let x = bounds.x + bounds.w * building as f32 / 24.0;
+    let window_color = Color::new(0.12, 0.95, 0.96, 0.22 + audio.energy * 0.38);
+    for building in 0..BUILDING_COUNT {
+        let x = bounds.x + bounds.w * building as f32 / BUILDING_COUNT as f32;
         let seed = ((building * 37 + 11) % 13) as f32 / 13.0;
         let width = bounds.w / 22.0;
         let height = bounds.h * (0.045 + seed * 0.12);
@@ -560,7 +554,6 @@ fn draw_backdrop(bounds: Rect, audio: AudioVisual, elapsed: f32, reduce_motion: 
             height,
             Color::from_rgba(8, 10, 29, 255),
         );
-        let window_color = Color::new(0.12, 0.95, 0.96, 0.22 + audio.energy * 0.38);
         for floor in 0..3 {
             draw_rectangle(
                 x + width * 0.22,
@@ -573,7 +566,7 @@ fn draw_backdrop(bounds: Rect, audio: AudioVisual, elapsed: f32, reduce_motion: 
     }
 
     let star_alpha = 0.18 + audio.energy * 0.42;
-    for star in 0..38 {
+    for star in 0..STAR_COUNT {
         let x = bounds.x + ((star * 71) % 997) as f32 / 997.0 * bounds.w;
         let y = bounds.y + ((star * 43 + 19) % 251) as f32 / 251.0 * bounds.h * 0.27;
         let twinkle = ((elapsed * 2.0 + star as f32).sin() * 0.5 + 0.5) * star_alpha;
@@ -606,8 +599,8 @@ fn draw_track(bounds: Rect, game: &RunnerGame, audio: AudioVisual, elapsed: f32)
         road,
     );
 
-    let cyan = Color::new(0.12, 0.92, 1.0, 0.68 + audio.pulse * 0.26);
-    let magenta = Color::new(1.0, 0.16, 0.72, 0.62 + audio.energy * 0.3);
+    let cyan = Color::new(0.12, 0.92, 1.0, 0.72 + audio.pulse * 0.38);
+    let magenta = Color::new(1.0, 0.16, 0.72, 0.66 + audio.energy * 0.34 + audio.pulse * 0.12);
     for edge in [-1.0, 1.0] {
         let far = road_point(bounds, edge, 1.0);
         let near = road_point(bounds, edge, 0.0);
@@ -806,6 +799,7 @@ fn draw_runner(
     pose: Option<PoseFrame>,
     feedback_flash: f32,
     audio: AudioVisual,
+    spring_scale: f32,
 ) {
     let state = game.players[player];
     let mut anchor = road_point(bounds, lane_to_road(state.lane), 0.025);
@@ -820,12 +814,15 @@ fn draw_runner(
         anchor.y -= (jump_progress.clamp(0.0, 1.0) * std::f32::consts::PI).sin() * bounds.h * 0.105;
     }
     let color = player_color(player);
-    let body_height = bounds.h * if state.slide_time > 0.0 { 0.105 } else { 0.19 };
+    let squash = spring_scale.clamp(0.72, 1.35);
+    let body_height =
+        bounds.h * if state.slide_time > 0.0 { 0.14 } else { 0.26 } * squash;
+    let body_width_mul = (2.0 - squash).clamp(0.75, 1.28);
     let glow = 0.16 + audio.energy * 0.18 + feedback_flash * 0.25;
     draw_ellipse(
         anchor.x,
         anchor.y + 4.0,
-        body_height * 0.34,
+        body_height * 0.34 * body_width_mul,
         body_height * 0.10,
         0.0,
         Color::new(color.r, color.g, color.b, glow),
@@ -853,6 +850,12 @@ fn draw_runner(
             4.0 * (1.0 - progress).max(0.15),
             Color::new(0.9, 0.75, 1.0, 1.0 - progress),
         );
+        draw_soft_glow(
+            vec2(anchor.x, anchor.y - body_height * 0.48),
+            body_height * (0.28 + progress * 0.5),
+            Color::new(0.9, 0.75, 1.0, (1.0 - progress) * 0.45),
+            2,
+        );
     }
     let label = format!("P{}", player + 1);
     let size = measure_text(&label, None, 14, 1.0);
@@ -874,6 +877,79 @@ fn draw_runner(
     );
 }
 
+fn guide_pose_for_obstacle(next: Option<RunnerObstacle>) -> GuidePose {
+    let Some(obstacle) = next else {
+        return GuidePose::Idle;
+    };
+    if obstacle.distance > ACTION_CUE_MAX_DISTANCE {
+        return GuidePose::Idle;
+    }
+    guide_pose_for_hazard(obstacle.kind, obstacle.lane)
+}
+
+fn guide_pose_for_hazard(kind: RunnerHazard, lane: i8) -> GuidePose {
+    match kind {
+        RunnerHazard::Hurdle => GuidePose::from_voice_cue("jump"),
+        RunnerHazard::OverheadGate => GuidePose::from_voice_cue("drop"),
+        RunnerHazard::BeatOrb => GuidePose::Clap,
+        RunnerHazard::LaneBlock => {
+            if lane < 0 {
+                GuidePose::DodgeRight
+            } else if lane > 0 {
+                GuidePose::DodgeLeft
+            } else {
+                GuidePose::DodgeLeft
+            }
+        }
+    }
+}
+
+fn draw_pink_user_overlay(
+    bounds: Rect,
+    game: &RunnerGame,
+    motion: &MotionRuntime,
+    visible: [bool; 4],
+    audio: AudioVisual,
+) {
+    let stage = guide_coach_layout(bounds.w, bounds.h);
+    let flash = 0.35 + audio.pulse * 0.2;
+    let mut drawn = 0usize;
+    for player in 0..game.players.len() {
+        if !visible[player] {
+            continue;
+        }
+        let Some(pose) = motion.players[player].pose else {
+            continue;
+        };
+        let hip = average_point(pose, 11, 12);
+        let shoulder = average_point(pose, 5, 6);
+        let source_height = (hip.y - shoulder.y).abs().max(0.12) * 2.4;
+        let body_height = stage.figure_scale * 2.35;
+        let scale = body_height / source_height;
+        let lane_spread = match drawn {
+            0 if visible.iter().filter(|v| **v).count() > 1 => -bounds.w * 0.14,
+            1 => bounds.w * 0.14,
+            _ => 0.0,
+        };
+        let anchor = vec2(
+            bounds.x + stage.figure_center.x + lane_spread,
+            bounds.y + stage.figure_center.y,
+        );
+        let project = |index: usize| {
+            let keypoint = pose.keypoints[index];
+            vec2(
+                anchor.x + (keypoint.x - hip.x) * scale,
+                anchor.y + (keypoint.y - hip.y) * scale,
+            )
+        };
+        draw_pink_neon_silhouette(pose, &project, flash, body_height);
+        drawn += 1;
+        if drawn >= 2 {
+            break;
+        }
+    }
+}
+
 fn draw_pose_avatar(anchor: Vec2, body_height: f32, pose: PoseFrame, color: Color, flash: f32) {
     let hip = average_point(pose, 11, 12);
     let shoulder = average_point(pose, 5, 6);
@@ -886,56 +962,8 @@ fn draw_pose_avatar(anchor: Vec2, body_height: f32, pose: PoseFrame, color: Colo
             anchor.y + (keypoint.y - hip.y) * scale,
         )
     };
-    for (from, to) in BONES {
-        if pose.keypoints[from].confidence < 0.25 || pose.keypoints[to].confidence < 0.25 {
-            continue;
-        }
-        let a = project(from);
-        let b = project(to);
-        draw_line(
-            a.x,
-            a.y,
-            b.x,
-            b.y,
-            10.0 + flash * 7.0,
-            Color::new(color.r, color.g, color.b, 0.12),
-        );
-        draw_line(
-            a.x,
-            a.y,
-            b.x,
-            b.y,
-            3.0 + flash * 2.0,
-            Color::new(color.r, color.g, color.b, 0.88),
-        );
-    }
-    let head = project(0);
-    draw_circle(
-        head.x,
-        head.y,
-        body_height * 0.075 + flash * 3.0,
-        Color::new(color.r, color.g, color.b, 0.92),
-    );
-    draw_circle(head.x, head.y, body_height * 0.031, WHITE);
-
-    // Hand Wrist AR Aura Glow (keypoints 9 & 10)
-    for hand_idx in [9, 10] {
-        if pose.keypoints[hand_idx].confidence >= 0.25 {
-            let wrist = project(hand_idx);
-            draw_circle(
-                wrist.x,
-                wrist.y,
-                body_height * 0.08 + flash * 4.0,
-                Color::new(color.r, color.g, color.b, 0.45),
-            );
-            draw_circle(
-                wrist.x,
-                wrist.y,
-                body_height * 0.035,
-                Color::from_rgba(255, 255, 255, 230),
-            );
-        }
-    }
+    // Lane avatar stays neon for lane read; pink overlay owns the “you” hero.
+    draw_neon_silhouette(pose, &project, color, flash, body_height);
 }
 
 fn draw_robot_avatar(anchor: Vec2, body_height: f32, sliding: bool, color: Color, flash: f32) {
@@ -992,6 +1020,30 @@ fn draw_robot_avatar(anchor: Vec2, body_height: f32, sliding: bool, color: Color
     );
 }
 
+fn draw_downbeat_wash(bounds: Rect, audio: AudioVisual, reduce_motion: bool) {
+    if reduce_motion || audio.pulse < 0.35 {
+        return;
+    }
+    let intensity = ((audio.pulse - 0.35) / 0.65).clamp(0.0, 1.0);
+    let alpha = 0.04 + intensity * 0.14 + audio.energy * 0.05;
+    let band = bounds.h * (0.035 + intensity * 0.025);
+    draw_rectangle(
+        bounds.x,
+        bounds.y,
+        bounds.w,
+        band,
+        Color::new(0.12, 0.92, 1.0, alpha),
+    );
+    draw_rectangle(
+        bounds.x,
+        bounds.y + bounds.h - band,
+        bounds.w,
+        band,
+        Color::new(1.0, 0.2, 0.72, alpha * 0.9),
+    );
+}
+
+#[allow(dead_code)] // Legacy top beacon retained for layout tests / optional revive.
 fn draw_next_cue(bounds: Rect, next: Option<RunnerObstacle>, audio: AudioVisual) {
     let Some(obstacle) = next else {
         return;
@@ -1004,57 +1056,34 @@ fn draw_next_cue(bounds: Rect, next: Option<RunnerObstacle>, audio: AudioVisual)
     let layout = action_cue_layout(bounds);
     let color = hazard_color(obstacle.kind);
     let proximity = action_cue_proximity(obstacle.distance);
-    let panel_color = Color::new(
-        0.02,
-        0.025,
-        0.11,
-        0.88 + audio.pulse * 0.08 + proximity * 0.04,
-    );
 
-    draw_round_panel(layout.panel, panel_color);
-    draw_rectangle_lines(
-        layout.panel.x,
-        layout.panel.y,
-        layout.panel.w,
-        layout.panel.h,
-        2.0 + proximity * 2.0,
-        Color::new(color.r, color.g, color.b, 0.58 + proximity * 0.36),
+    // Soft halo only — no dense chrome box competing with the silhouette.
+    draw_soft_glow(
+        layout.icon_center,
+        layout.icon_scale * 1.55,
+        Color::new(color.r, color.g, color.b, 0.22 + audio.pulse * 0.08 + proximity * 0.12),
+        3,
     );
-
     draw_circle(
         layout.icon_center.x,
         layout.icon_center.y,
-        layout.icon_scale * 1.18,
-        Color::new(color.r, color.g, color.b, 0.09 + audio.pulse * 0.04),
+        layout.icon_scale * (1.05 + proximity * 0.08),
+        Color::new(0.02, 0.03, 0.1, 0.42 + proximity * 0.12),
     );
     draw_circle_lines(
         layout.icon_center.x,
         layout.icon_center.y,
-        layout.icon_scale * (0.95 + proximity * 0.08),
-        2.0 + proximity,
-        Color::new(color.r, color.g, color.b, 0.56),
+        layout.icon_scale * (0.98 + proximity * 0.06),
+        4.0 + proximity * 2.0,
+        Color::new(color.r, color.g, color.b, 0.72 + proximity * 0.24),
     );
     draw_action_pictogram(
         presentation.pictogram,
         layout.icon_center,
-        layout.icon_scale,
+        layout.icon_scale * 1.05,
         color,
     );
 
-    draw_text(
-        presentation.verb,
-        layout.text_x,
-        layout.verb_baseline,
-        layout.verb_font_size,
-        color,
-    );
-    draw_text(
-        action_cue_lane_label(obstacle.lane),
-        layout.text_x,
-        layout.lane_baseline,
-        layout.lane_font_size,
-        Color::from_rgba(226, 232, 240, 255),
-    );
     draw_action_cue_lane_slots(layout.lane_slots, obstacle.lane, color);
 
     draw_rectangle(
@@ -1074,7 +1103,7 @@ fn draw_next_cue(bounds: Rect, next: Option<RunnerObstacle>, audio: AudioVisual)
     draw_circle(
         layout.proximity_rail.x + layout.proximity_rail.w * proximity,
         layout.proximity_rail.y + layout.proximity_rail.h * 0.5,
-        3.0 + proximity * 2.0,
+        5.0 + proximity * 3.0,
         WHITE,
     );
 }
@@ -1347,6 +1376,27 @@ mod action_cue_tests {
     const VIEWPORTS: [(f32, f32); 3] = [(390.0, 844.0), (667.0, 375.0), (1440.0, 784.0)];
 
     #[test]
+    fn runner_hazards_map_to_voice_synced_guide_poses() {
+        assert_eq!(
+            guide_pose_for_hazard(RunnerHazard::Hurdle, 0),
+            GuidePose::Jump
+        );
+        assert_eq!(
+            guide_pose_for_hazard(RunnerHazard::OverheadGate, 0),
+            GuidePose::Squat
+        );
+        assert_eq!(
+            guide_pose_for_hazard(RunnerHazard::BeatOrb, 0),
+            GuidePose::Clap
+        );
+        assert_eq!(
+            guide_pose_for_hazard(RunnerHazard::LaneBlock, -1),
+            GuidePose::DodgeRight
+        );
+        assert_eq!(guide_pose_for_obstacle(None), GuidePose::Idle);
+    }
+
+    #[test]
     fn every_hazard_has_a_distinct_shape_and_action_verb() {
         let presentations = [
             action_cue_presentation(RunnerHazard::LaneBlock),
@@ -1376,11 +1426,18 @@ mod action_cue_tests {
             let layout = action_cue_layout(bounds);
 
             assert!(layout.panel.x >= bounds.x);
-            assert!(layout.panel.y >= bounds.y + 54.0);
+            assert!(layout.panel.y >= bounds.y + 12.0);
             assert!(layout.panel.x + layout.panel.w <= bounds.x + bounds.w);
             assert!(layout.panel.y + layout.panel.h <= bounds.y + bounds.h);
-            assert!(layout.icon_scale >= 25.0);
-            assert!(layout.verb_font_size >= 25.0);
+            assert!(layout.icon_scale >= bounds.w.min(bounds.h) * 0.10);
+            assert!(crate::juice::hero_edge_meets_contract(
+                layout.icon_scale * 2.0,
+                bounds.w,
+                bounds.h
+            ));
+            assert!(
+                (layout.icon_center.x - (layout.panel.x + layout.panel.w * 0.5)).abs() < 0.5
+            );
             assert!(layout.lane_slots.x >= layout.panel.x);
             assert!(layout.lane_slots.x + layout.lane_slots.w <= layout.panel.x + layout.panel.w);
             assert!(
@@ -1427,16 +1484,16 @@ mod action_cue_tests {
         let mut game = RunnerGame::new();
         game.feedback[0] = RunnerFeedback::Dodge;
 
-        stage.update(0.016, &game);
+        stage.update(0.016, &game, false);
         assert_eq!(stage.feedback_pulses[0].kind, RunnerFeedback::Dodge);
         assert_eq!(stage.feedback_pulses[0].remaining, FEEDBACK_PULSE_SECONDS);
 
         game.feedback[0] = RunnerFeedback::None;
-        stage.update(FEEDBACK_PULSE_SECONDS * 0.5, &game);
+        stage.update(FEEDBACK_PULSE_SECONDS * 0.5, &game, false);
         assert!(stage.feedback_pulses[0].is_visible());
         assert!((stage.feedback_pulses[0].intensity() - 0.5).abs() < 0.001);
 
-        stage.update(FEEDBACK_PULSE_SECONDS, &game);
+        stage.update(FEEDBACK_PULSE_SECONDS, &game, false);
         assert!(!stage.feedback_pulses[0].is_visible());
         assert_eq!(stage.feedback_pulses[0].kind, RunnerFeedback::None);
     }

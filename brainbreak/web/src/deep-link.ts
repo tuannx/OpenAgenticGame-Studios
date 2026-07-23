@@ -2,9 +2,24 @@
 // links are shareable and bookmarkable. Query-param based (?mode= / ?game=),
 // which works with the existing single-page-application asset handling.
 
-export type DeepLinkMode = 'random' | 'mirror' | 'strike' | 'duo' | 'supernova';
+export type DeepLinkMode =
+  | 'brainbreak'
+  | 'ar'
+  | 'random'
+  | 'mirror'
+  | 'strike'
+  | 'duo'
+  | 'supernova';
 
-const MODE_KEYS: readonly DeepLinkMode[] = ['random', 'mirror', 'strike', 'duo', 'supernova'];
+const MODE_KEYS: readonly DeepLinkMode[] = [
+  'brainbreak',
+  'ar',
+  'random',
+  'mirror',
+  'strike',
+  'duo',
+  'supernova',
+];
 
 export interface DeepLink {
   mode?: DeepLinkMode;

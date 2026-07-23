@@ -1,14 +1,21 @@
-//! Supernova Freeze Party renderer — Danny Go–inspired kid-friendly visuals.
-//! Big mascot blob, DANCE/FREEZE prompts, snowflake icon, confetti & stars.
-//! Minimal text (only big single words), maximum visual joy for ages 4–7.
+//! Supernova Freeze Party renderer — show-don't-tell kid visuals.
+//! Pictograms, color signals (green move / red freeze), elemental VFX,
+//! drum pulse rings. No on-canvas word walls — kids at 1.5–4m cannot read.
 
-use brainbreak_core::{SupernovaGame, SupernovaOutcome, SupernovaPhase};
+use brainbreak_core::{PoseFrame, SupernovaGame, SupernovaPhase};
 use macroquad::prelude::*;
 
+use crate::guide_coach::{
+    draw_guide_coach, guide_coach_layout, user_overlay_bounds, GuidePose, GUIDE_DANCE_VERB_SECONDS,
+};
+use crate::juice::{
+    draw_pink_neon_silhouette, draw_soft_glow, hero_edge, BurstKind, ParticlePool, ScreenShake,
+    SpringScale,
+};
 use crate::visuals::AudioVisual;
 
 const TAU: f32 = std::f32::consts::TAU;
-const MAX_CONFETTI: usize = 150;
+const MAX_CONFETTI: usize = 72;
 
 fn rand01() -> f32 {
     macroquad::rand::gen_range(0.0, 1.0)
@@ -46,9 +53,13 @@ struct Confetti {
     is_star: bool,
 }
 
-#[derive(Default)]
 pub struct SupernovaStage {
     confetti: Vec<Confetti>,
+    glow: ParticlePool,
+    shake: ScreenShake,
+    core_spring: SpringScale,
+    cue_spring: SpringScale,
+    result_spring: SpringScale,
     explosion_spawned: bool,
     flash_alpha: f32,
     time: f32,
@@ -57,10 +68,30 @@ pub struct SupernovaStage {
     freeze_pop: f32,
     dance_pop: f32,
     last_phase: SupernovaPhase,
-    /// Screen-shake magnitude (decays; applied as a jitter offset).
-    shake: f32,
     /// Hit-stop timer: briefly freezes stage animation for physical weight.
     hitstop: f32,
+}
+
+impl Default for SupernovaStage {
+    fn default() -> Self {
+        Self {
+            confetti: Vec::new(),
+            glow: ParticlePool::default(),
+            shake: ScreenShake::with_decay(26.0),
+            core_spring: SpringScale::new(1.0),
+            cue_spring: SpringScale::new(1.0),
+            result_spring: SpringScale::new(1.0),
+            explosion_spawned: false,
+            flash_alpha: 0.0,
+            time: 0.0,
+            countdown_pop: 0.0,
+            last_countdown_num: 0,
+            freeze_pop: 0.0,
+            dance_pop: 0.0,
+            last_phase: SupernovaPhase::Ready,
+            hitstop: 0.0,
+        }
+    }
 }
 
 impl SupernovaStage {
@@ -71,14 +102,32 @@ impl SupernovaStage {
             return;
         }
         self.time += dt;
+        self.glow.update(dt);
+        self.shake.update(dt);
+        self.core_spring.update(dt);
+        self.cue_spring.update(dt);
+        self.result_spring.update(dt);
 
         // Phase-change pop animations.
         if game.phase != self.last_phase {
             if game.phase == SupernovaPhase::Freeze {
                 self.freeze_pop = 1.0;
+                self.cue_spring.punch(5.0);
+                if !reduce_motion {
+                    self.glow.spawn_screen_burst(
+                        vec2(screen_width() * 0.5, screen_height() * 0.42),
+                        BurstKind::Freeze,
+                        1.1,
+                    );
+                    self.shake.impulse(2.8);
+                }
             }
             if game.phase == SupernovaPhase::Dance {
                 self.dance_pop = 1.0;
+                self.cue_spring.punch(4.2);
+            }
+            if game.phase == SupernovaPhase::Result {
+                self.result_spring.punch(6.5);
             }
             self.last_phase = game.phase;
         }
@@ -90,34 +139,77 @@ impl SupernovaStage {
         if num != self.last_countdown_num {
             self.countdown_pop = 1.0;
             self.last_countdown_num = num;
+            self.cue_spring.punch(3.5);
         }
         self.countdown_pop = (self.countdown_pop - dt * 3.0).max(0.0);
+
+        // On-beat dance hits / drum smash juice.
+        for feedback in game.feedback.iter() {
+            if !feedback.hit {
+                continue;
+            }
+            let kind = if feedback.on_beat {
+                BurstKind::Clap
+            } else {
+                BurstKind::Hit
+            };
+            self.glow.spawn_screen_burst(
+                vec2(screen_width() * 0.5, screen_height() * 0.42),
+                kind,
+                if feedback.on_beat { 1.15 } else { 0.9 },
+            );
+            self.core_spring.punch(if feedback.on_beat { 4.8 } else { 2.6 });
+            if !reduce_motion {
+                self.shake.impulse(if feedback.on_beat { 3.6 } else { 1.8 });
+            }
+        }
 
         // Spawn confetti explosion on drop + impact shake & hit-stop.
         if game.drop_triggered && !self.explosion_spawned {
             self.spawn_celebration(game.energy);
+            self.glow.spawn_screen_burst(
+                vec2(screen_width() * 0.5, screen_height() * 0.4),
+                BurstKind::Drop,
+                1.45,
+            );
             self.explosion_spawned = true;
             self.flash_alpha = 1.0;
+            self.core_spring.punch(8.0);
             if !reduce_motion {
-                self.shake = 9.0;
-                self.hitstop = 0.05;
+                self.shake.impulse(14.0);
+                self.hitstop = 0.08;
             }
         }
 
+        // Near-full core: continuous micro-tremble before the Drop.
+        if game.drop_imminent && !reduce_motion {
+            let tremble = 1.8 + (game.energy - 0.82).max(0.0) * 18.0;
+            self.shake.impulse(tremble);
+        }
+
         // Perfect freeze: small satisfied shake (one-shot frame flag).
-        if game.perfect_freeze && !reduce_motion {
-            self.shake = self.shake.max(3.5);
+        if game.perfect_freeze {
+            self.core_spring.punch(5.5);
+            self.glow.spawn_screen_burst(
+                vec2(screen_width() * 0.5, screen_height() * 0.42),
+                BurstKind::Freeze,
+                1.25,
+            );
+            if !reduce_motion {
+                self.shake.impulse(3.5);
+            }
         }
 
         // Reset when returning to countdown.
         if game.phase == SupernovaPhase::Countdown {
             self.explosion_spawned = false;
             self.confetti.clear();
+            self.glow.clear();
         }
 
-        // Decay flash + shake.
-        self.flash_alpha = (self.flash_alpha - dt * 2.0).max(0.0);
-        self.shake = (self.shake - dt * 26.0).max(0.0);
+        // Decay flash (slower flash linger sells the Drop).
+        let flash_decay = if game.phase == SupernovaPhase::Drop { 1.15 } else { 2.0 };
+        self.flash_alpha = (self.flash_alpha - dt * flash_decay).max(0.0);
 
         // Update confetti physics.
         for c in self.confetti.iter_mut() {
@@ -153,7 +245,13 @@ impl SupernovaStage {
         }
     }
 
-    pub fn draw(&self, game: &SupernovaGame, audio: AudioVisual, reduce_motion: bool) {
+    pub fn draw(
+        &self,
+        game: &SupernovaGame,
+        audio: AudioVisual,
+        reduce_motion: bool,
+        poses: &[PoseFrame],
+    ) {
         let w = screen_width();
         let h = screen_height();
 
@@ -161,32 +259,75 @@ impl SupernovaStage {
         self.draw_background(game, w, h, audio, reduce_motion);
 
         // Foreground impact shake offset.
-        let shake = if self.shake > 0.05 && !reduce_motion {
-            vec2(
-                (self.time * 91.0).sin() * self.shake,
-                (self.time * 73.0).cos() * self.shake * 0.6,
-            )
-        } else {
-            Vec2::ZERO
-        };
+        let shake = self.shake.offset(self.time, reduce_motion);
+        let stage = guide_coach_layout(w, h);
+        let stage_cx = stage.figure_center.x + shake.x;
+        let stage_cy = stage.figure_center.y + shake.y;
+
+        // Guide under user on the shared stage (both ~40%).
+        if game.phase != SupernovaPhase::Result {
+            draw_guide_coach(
+                self.guide_pose_for(game),
+                self.time,
+                audio.pulse,
+                reduce_motion,
+            );
+        }
 
         match game.phase {
             SupernovaPhase::Ready => {
-                self.draw_mascot(game, w * 0.5 + shake.x, h * 0.45 + shake.y, 0.0, false, true, audio);
+                self.draw_pose_ribbons(poses, stage_cx, stage_cy, false);
+                self.draw_mascot(
+                    game,
+                    stage_cx,
+                    stage_cy - stage.figure_scale * 0.2,
+                    0.0,
+                    false,
+                    true,
+                    audio,
+                );
             }
             SupernovaPhase::Countdown => {
-                self.draw_mascot(game, w * 0.5 + shake.x, h * 0.5 + shake.y, 0.0, false, true, audio);
-                self.draw_countdown(game, w * 0.5, h * 0.28);
+                self.draw_pose_ribbons(poses, stage_cx, stage_cy, false);
+                self.draw_mascot(
+                    game,
+                    stage_cx,
+                    stage_cy - stage.figure_scale * 0.2,
+                    0.0,
+                    false,
+                    true,
+                    audio,
+                );
+                self.draw_countdown(game, w * 0.5, h * 0.14);
             }
             SupernovaPhase::Dance => {
-                let cx = w * 0.5 + shake.x;
-                let cy = h * 0.42 + shake.y;
-                self.draw_mascot(game, cx, cy, game.energy, false, true, audio);
-                self.draw_energy_ring(game, cx, cy, audio);
-                self.draw_dance_prompt(w * 0.5, h * 0.14, audio);
-                self.draw_action_icons(game, w, h);
-                self.draw_combo_stars(game, w, h);
-                self.draw_freeze_stars(game, w, h);
+                self.draw_pose_ribbons(poses, stage_cx, stage_cy, false);
+                self.draw_mascot(
+                    game,
+                    stage_cx,
+                    stage_cy - stage.figure_scale * 0.2,
+                    game.energy,
+                    false,
+                    true,
+                    audio,
+                );
+                if audio.pulse > 0.35 {
+                    self.draw_drum_pulse_rings(stage_cx, stage_cy + hero_edge(w, h) * 0.2, audio);
+                }
+            }
+            SupernovaPhase::LavaWarning => {
+                self.draw_pose_ribbons(poses, stage_cx, stage_cy, false);
+                self.draw_mascot(
+                    game,
+                    stage_cx,
+                    stage_cy - stage.figure_scale * 0.2,
+                    game.energy,
+                    false,
+                    true,
+                    audio,
+                );
+                self.draw_lava_warning_cue(w * 0.5, h * 0.12);
+                self.draw_countdown(game, w * 0.5, h * 0.18);
             }
             SupernovaPhase::Freeze => {
                 let wobble = if game.freeze_wobble {
@@ -194,57 +335,142 @@ impl SupernovaStage {
                 } else {
                     0.0
                 };
-                let cx = w * 0.5 + wobble + shake.x;
-                let cy = h * 0.42 + shake.y;
-                self.draw_mascot(game, cx, cy, game.energy, true, true, audio);
-                self.draw_freeze_prompt(w * 0.5, h * 0.14);
-                self.draw_freeze_meter(game, cx, cy);
-                self.draw_freeze_stars(game, w, h);
+                let cx = stage_cx + wobble;
+                self.draw_pose_ribbons(poses, cx, stage_cy, true);
+                self.draw_mascot(
+                    game,
+                    cx,
+                    stage_cy - stage.figure_scale * 0.2,
+                    game.energy,
+                    true,
+                    true,
+                    audio,
+                );
+                self.draw_freeze_meter(game, cx, stage_cy);
                 if game.perfect_freeze {
-                    self.draw_perfect_star(w * 0.5, h * 0.62);
+                    self.draw_perfect_star(w * 0.5, h * 0.22);
                 }
             }
             SupernovaPhase::Drop => {
                 self.draw_confetti(shake);
                 self.draw_flash();
-                self.draw_mascot(game, w * 0.5 + shake.x, h * 0.42 + shake.y, 1.0, false, true, audio);
+                self.draw_mascot(game, stage_cx, stage_cy, 1.0, false, true, audio);
             }
             SupernovaPhase::Result => {
                 self.draw_confetti(Vec2::ZERO);
                 self.draw_result(game, w, h, audio);
             }
         }
+
+        self.glow.draw_screen(reduce_motion);
     }
 
-    // --- Background: neon cyber-party scene that breathes with the music ---
+    fn guide_pose_for(&self, game: &SupernovaGame) -> GuidePose {
+        match game.phase {
+            SupernovaPhase::Ready => GuidePose::RaiseHands,
+            SupernovaPhase::Countdown => GuidePose::Go,
+            SupernovaPhase::Dance if game.drop_imminent => GuidePose::Squat,
+            SupernovaPhase::Dance => {
+                let verb_i = ((self.time / GUIDE_DANCE_VERB_SECONDS).floor() as usize) % 8;
+                GuidePose::from_dance_verb(verb_i)
+            }
+            SupernovaPhase::LavaWarning => GuidePose::from_voice_cue("lava"),
+            SupernovaPhase::Freeze => GuidePose::from_voice_cue("freeze"),
+            SupernovaPhase::Drop => GuidePose::from_voice_cue("drop"),
+            SupernovaPhase::Result => GuidePose::Clap,
+        }
+    }
+
+    fn draw_pose_ribbons(&self, poses: &[PoseFrame], cx: f32, cy: f32, frozen: bool) {
+        let overlay = user_overlay_bounds(screen_width(), screen_height());
+        let stage = guide_coach_layout(screen_width(), screen_height());
+        // Pink neon “you” stacks on the same stage as the coach (~40% + aura).
+        let flash = if frozen { 0.55 } else { 0.4 };
+        for (index, pose) in poses.iter().take(2).enumerate() {
+            let offset_x = if poses.len() > 1 {
+                if index == 0 {
+                    -overlay.w * 0.14
+                } else {
+                    overlay.w * 0.14
+                }
+            } else {
+                0.0
+            };
+            let hip = average_pose_point(*pose, 11, 12);
+            let shoulder = average_pose_point(*pose, 5, 6);
+            let source_height = (hip.y - shoulder.y).abs().max(0.12) * 2.4;
+            let body_height = stage.figure_scale * 2.35 + self.core_spring.value * 8.0;
+            let scale = body_height / source_height;
+            let anchor = vec2(cx + offset_x, cy);
+            let project = |key: usize| {
+                let point = pose.keypoints[key];
+                vec2(
+                    anchor.x + (point.x - hip.x) * scale,
+                    anchor.y + (point.y - hip.y) * scale,
+                )
+            };
+            draw_pink_neon_silhouette(*pose, &project, flash, body_height);
+            if frozen {
+                for chain_idx in [5usize, 6, 11, 12] {
+                    if pose.keypoints[chain_idx].confidence < 0.22 {
+                        continue;
+                    }
+                    let p = project(chain_idx);
+                    draw_soft_glow(p, body_height * 0.08, Color::from_rgba(140, 220, 255, 90), 2);
+                }
+            }
+        }
+    }
+
+    // --- Background: elemental party journey skins (wind/ocean → smoke/fire → ice → celebrate) ---
     fn draw_background(&self, game: &SupernovaGame, w: f32, h: f32, audio: AudioVisual, reduce_motion: bool) {
         let energy = game.energy;
-        let frozen = game.phase == SupernovaPhase::Freeze;
-        // Combined beat drive: sharp transient pulse + sustained loudness.
+        let phase = game.phase;
+        let frozen = phase == SupernovaPhase::Freeze;
+        let lava_warn = phase == SupernovaPhase::LavaWarning;
+        let dropping = phase == SupernovaPhase::Drop;
+        let cooling = phase == SupernovaPhase::Result;
+        let opening = phase == SupernovaPhase::Countdown || phase == SupernovaPhase::Ready;
         let drive = if reduce_motion {
             audio.energy * 0.25
         } else {
             audio.pulse * 0.55 + audio.energy * 0.5
         };
 
-        // 1) Gradient night sky (banded for smoothness).
+        // Elemental sky: ice / fire+smoke / ocean cool / wind+ocean dance / smoke open
         let (top, bot) = if frozen {
             (
                 Color::from_rgba(16, 42, 84, 255),
                 Color::from_rgba(8, 24, 52, 255),
             )
+        } else if lava_warn || dropping {
+            (
+                Color::from_rgba(78, 22, 10, 255),
+                Color::from_rgba(36, 8, 6, 255),
+            )
+        } else if cooling {
+            (
+                Color::from_rgba(12, 48, 72, 255),
+                Color::from_rgba(8, 28, 48, 255),
+            )
+        } else if opening {
+            (
+                Color::from_rgba(36, 32, 52, 255),
+                Color::from_rgba(18, 16, 28, 255),
+            )
         } else {
+            // Dance: teal wind / ocean sway
             (
                 Color::from_rgba(
-                    (24.0 + energy * 46.0) as u8,
-                    (12.0 + energy * 22.0) as u8,
-                    (64.0 + energy * 66.0) as u8,
+                    (18.0 + energy * 28.0) as u8,
+                    (42.0 + energy * 40.0) as u8,
+                    (72.0 + energy * 50.0) as u8,
                     255,
                 ),
                 Color::from_rgba(
-                    (44.0 + energy * 40.0) as u8,
-                    (10.0 + energy * 18.0) as u8,
-                    (72.0 + energy * 40.0) as u8,
+                    (10.0 + energy * 20.0) as u8,
+                    (28.0 + energy * 36.0) as u8,
+                    (58.0 + energy * 40.0) as u8,
                     255,
                 ),
             )
@@ -254,36 +480,117 @@ impl SupernovaStage {
             draw_rectangle(0.0, h * t, w, h / 13.0 + 1.0, lerp_color(top, bot, t));
         }
 
-        // 2) Twinkling stars, brightening with musical energy.
-        let star_alpha = 0.16 + audio.energy * 0.4;
-        for star in 0..30 {
-            let x = ((star * 71) % 997) as f32 / 997.0 * w;
-            let y = ((star * 43 + 19) % 251) as f32 / 251.0 * h * 0.3;
-            let twinkle = ((self.time * 2.0 + star as f32).sin() * 0.5 + 0.5) * star_alpha;
-            let c = if frozen {
-                Color::from_rgba(190, 230, 255, (twinkle * 255.0) as u8)
-            } else {
-                Color::from_rgba(255, 220, 250, (twinkle * 255.0) as u8)
-            };
-            draw_circle(x, y, 1.0 + (star % 3) as f32 * 0.5, c);
+        // Soft smoke wisps on open / lava warning — sparse, not fog soup.
+        if opening || lava_warn {
+            for i in 0..3 {
+                let fi = i as f32;
+                let sx = (w * (0.2 + fi * 0.25) + self.time * (8.0 + fi)).rem_euclid(w);
+                let sy = h * (0.18 + ((self.time * 0.15 + fi * 0.2).sin() * 0.06 + 0.06));
+                let a = if lava_warn { 45 } else { 28 };
+                draw_circle(sx, sy, 36.0 + fi * 8.0, Color::from_rgba(200, 200, 210, a));
+            }
         }
 
-        // 3) Beat-breathing neon sun behind the mascot.
-        self.draw_neon_sun(w * 0.5, h * 0.40, w.min(h), drive, frozen, energy);
-
-        // 4) Horizon grid floor scrolling toward the viewer on the beat.
-        self.draw_horizon_grid(w, h, drive, frozen, reduce_motion);
-
-        // 5) Side equalizer pylons pulsing with loudness.
-        self.draw_equalizer(w, h, audio, frozen, reduce_motion);
-
-        // 6) Falling snowflakes during freeze.
-        if frozen {
-            for i in 0..12 {
+        // A few big wind streaks during dance (readable motion, not glitter).
+        if phase == SupernovaPhase::Dance && !reduce_motion {
+            for i in 0..4 {
                 let fi = i as f32;
-                let sx = (w * (0.08 + fi * 0.08) + self.time * (10.0 + fi * 3.0)).rem_euclid(w);
+                let y = h * (0.22 + fi * 0.12);
+                let x = (self.time * (56.0 + fi * 18.0) + fi * 90.0).rem_euclid(w + 140.0) - 70.0;
+                draw_rectangle(x, y, 90.0 + fi * 12.0, 4.0, Color::from_rgba(180, 240, 255, 75));
+            }
+        }
+
+        // Ocean wave bands on dance + result cool-down
+        if phase == SupernovaPhase::Dance || cooling {
+            for i in 0..2 {
+                let fi = i as f32;
+                let y = h * 0.78 + (self.time * 1.2 + fi).sin() * 6.0 + fi * 14.0;
+                draw_rectangle(
+                    0.0,
+                    y,
+                    w,
+                    10.0,
+                    Color::from_rgba(60, 160, 210, if cooling { 70 } else { 40 }),
+                );
+            }
+        }
+
+        let star_alpha = 0.14 + audio.energy * 0.28;
+        for star in 0..10 {
+            let x = ((star * 71) % 997) as f32 / 997.0 * w;
+            let y = ((star * 43 + 19) % 251) as f32 / 251.0 * h * 0.28;
+            let twinkle = ((self.time * 2.0 + star as f32).sin() * 0.5 + 0.5) * star_alpha;
+            let c = if frozen || cooling {
+                Color::from_rgba(190, 230, 255, (twinkle * 255.0) as u8)
+            } else if lava_warn || dropping {
+                Color::from_rgba(255, 180, 120, (twinkle * 255.0) as u8)
+            } else {
+                Color::from_rgba(220, 255, 250, (twinkle * 255.0) as u8)
+            };
+            draw_circle(x, y, 2.0 + (star % 3) as f32, c);
+        }
+
+        self.draw_neon_sun(w * 0.5, h * 0.42, w.min(h), drive, frozen || cooling, energy);
+        self.draw_horizon_grid(w, h, drive, frozen, reduce_motion);
+        // Equalizer culled — competed with hero cues at camera distance.
+
+        if frozen {
+            for i in 0..6 {
+                let fi = i as f32;
+                let sx = (w * (0.12 + fi * 0.14) + self.time * (10.0 + fi * 3.0)).rem_euclid(w);
                 let sy = (self.time * (30.0 + fi * 8.0) + fi * 90.0).rem_euclid(h);
-                draw_snowflake(sx, sy, 5.0 + (fi % 3.0) * 2.0, Color::from_rgba(200, 235, 255, 120));
+                draw_snowflake(sx, sy, 10.0 + (fi % 3.0) * 3.0, Color::from_rgba(200, 235, 255, 150));
+            }
+        }
+
+        // Fire ember sparks on lava warning / drop
+        if (lava_warn || dropping) && !reduce_motion {
+            for i in 0..18 {
+                let fi = i as f32;
+                let sx = (w * (0.03 + fi * 0.055) + (self.time * 20.0 + fi * 17.0).sin() * 12.0)
+                    .rem_euclid(w);
+                let sy = h - (self.time * (50.0 + fi * 9.0) + fi * 40.0).rem_euclid(h * 0.65);
+                draw_circle(sx, sy, 3.0 + (fi % 3.0), Color::from_rgba(255, 140, 60, 180));
+            }
+        }
+
+        // Virtual lava floor band — reads at distance without words
+        if lava_warn || frozen || dropping {
+            let lava_h = h * if frozen { 0.18 } else { 0.28 };
+            let pulse = if reduce_motion {
+                0.35
+            } else {
+                0.45 + (self.time * 4.0).sin().abs() * 0.35
+            };
+            draw_rectangle(
+                0.0,
+                h - lava_h,
+                w,
+                lava_h,
+                Color::from_rgba(
+                    255,
+                    if frozen { 60 } else { 90 },
+                    if frozen { 40 } else { 20 },
+                    (90.0 + pulse * 80.0) as u8,
+                ),
+            );
+            if !frozen {
+                for i in 0..7 {
+                    let fi = i as f32;
+                    let x = (self.time * (30.0 + fi * 8.0) + fi * 70.0).rem_euclid(w + 40.0) - 20.0;
+                    let y = h - lava_h * (0.35 + (self.time * 2.0 + fi).sin().abs() * 0.4);
+                    draw_circle(x, y, 10.0 + fi * 2.0, Color::from_rgba(255, 200, 60, 140));
+                }
+            } else {
+                // Ice crust over lava — freeze readable as color flip
+                draw_rectangle(
+                    0.0,
+                    h - lava_h * 0.55,
+                    w,
+                    lava_h * 0.55,
+                    Color::from_rgba(140, 220, 255, 70),
+                );
             }
         }
     }
@@ -357,6 +664,8 @@ impl SupernovaStage {
     }
 
     // --- Equalizer pylons: side bars that dance to the loudness ---
+    // Equalizer / multi-icon rows culled — one hero cue owns attention.
+    #[allow(dead_code)]
     fn draw_equalizer(&self, w: f32, h: f32, audio: AudioVisual, frozen: bool, reduce_motion: bool) {
         let base_y = h * 0.98;
         let bars = 5;
@@ -387,13 +696,18 @@ impl SupernovaStage {
     // --- Mascot: cute round blob with face; frozen = ice-blue & stiff ---
     #[allow(clippy::too_many_arguments)]
     fn draw_mascot(&self, game: &SupernovaGame, cx: f32, cy: f32, energy: f32, frozen: bool, show_face: bool, audio: AudioVisual) {
-        let base_r = 50.0;
-        let radius = base_r + energy * 45.0;
+        let screen_min = screen_width().min(screen_height());
+        let base_r = hero_edge(screen_width(), screen_height()) * 0.42;
+        let radius = base_r + energy * screen_min * 0.06;
 
         // Bounce to the music: idle sway + a kick on every beat pulse.
         let beat_kick = if frozen { 0.0 } else { audio.pulse * 7.0 };
         let idle_bounce = if frozen { 0.0 } else { (self.time * 3.0).sin() * 4.0 };
-        let squash = if frozen { 1.0 } else { 1.0 + (self.time * 3.0).sin() * 0.03 + audio.pulse * 0.05 };
+        let squash = if frozen {
+            1.0
+        } else {
+            self.core_spring.value * (1.0 + (self.time * 3.0).sin() * 0.03 + audio.pulse * 0.05)
+        };
         let pos = vec2(cx, cy + idle_bounce - beat_kick);
 
         // Body color: frozen = ice blue; else blue → orange → gold with energy.
@@ -408,8 +722,12 @@ impl SupernovaStage {
         // AR aura: concentric glow breathing with the beat while dancing.
         if !frozen && (game.phase == SupernovaPhase::Dance || game.phase == SupernovaPhase::Drop) {
             let aura_color = if energy > 0.6 { KID_COLORS[1] } else { KID_COLORS[3] };
-            draw_circle(pos.x, pos.y, radius * 1.5 + audio.pulse * 10.0, Color::new(aura_color.r, aura_color.g, aura_color.b, 0.05 + audio.pulse * 0.06));
-            draw_circle(pos.x, pos.y, radius * 1.22 + audio.pulse * 6.0, Color::new(aura_color.r, aura_color.g, aura_color.b, 0.08 + audio.pulse * 0.08));
+            draw_soft_glow(
+                pos,
+                radius * 1.35 + audio.pulse * 10.0,
+                Color::new(aura_color.r, aura_color.g, aura_color.b, 0.28 + audio.pulse * 0.2),
+                3,
+            );
         }
 
         // Shadow.
@@ -439,8 +757,11 @@ impl SupernovaStage {
             self.draw_face(game, pos, radius * squash, frozen);
         }
 
-        // Arms: waving during dance, held stiff down during freeze.
-        if game.phase == SupernovaPhase::Dance || game.phase == SupernovaPhase::Freeze {
+        // Arms: waving during dance / lava warning, held stiff down during freeze.
+        if matches!(
+            game.phase,
+            SupernovaPhase::Dance | SupernovaPhase::LavaWarning | SupernovaPhase::Freeze
+        ) {
             let arm_r = radius * 0.18;
             if frozen {
                 // Stiff arms at sides.
@@ -510,6 +831,7 @@ impl SupernovaStage {
     }
 
     // --- Energy ring: circular progress around mascot (no text) ---
+    #[allow(dead_code)]
     fn draw_energy_ring(&self, game: &SupernovaGame, cx: f32, cy: f32, audio: AudioVisual) {
         let radius = 105.0 + game.energy * 45.0;
         let segments = 24;
@@ -542,42 +864,138 @@ impl SupernovaStage {
         }
     }
 
-    // --- DANCE! prompt: big bouncing word ---
-    fn draw_dance_prompt(&self, cx: f32, cy: f32, audio: AudioVisual) {
-        let scale = bounce_scale(self.dance_pop);
-        let wiggle = (self.time * 6.0).sin() * 0.08;
-        let font_size = 44.0 * scale * (1.0 + wiggle) * (1.0 + audio.pulse * 0.08);
-        let color = KID_COLORS[0]; // red-coral, high energy
-        let size = measure_text("DANCE!", None, font_size as u16, 1.0);
-        draw_text("DANCE!", cx - size.width * 0.5, cy + font_size * 0.35, font_size, color);
-
-        // Musical notes floating around the word.
-        for i in 0..3 {
-            let fi = i as f32;
-            let nx = cx + (fi - 1.0) * 90.0 + (self.time * 20.0 + fi * 40.0).sin() * 8.0;
-            let ny = cy - 20.0 - ((self.time * 25.0 + fi * 30.0).rem_euclid(40.0));
-            draw_circle(nx, ny, 4.0, KID_COLORS[(i + 1) % KID_COLORS.len()]);
+    // --- Traffic-light color signals (flamingo / red-green format) ---
+    #[allow(dead_code)]
+    fn draw_signal_light(&self, cx: f32, cy: f32, kind: SignalKind, pulse: f32) {
+        let scale = self.cue_spring.value
+            * (1.0 + pulse * 0.12 + bounce_scale(self.dance_pop.max(self.freeze_pop)) * 0.08);
+        let (fill, ring) = match kind {
+            SignalKind::Go => (
+                Color::from_rgba(80, 220, 90, 230),
+                Color::from_rgba(180, 255, 180, 180),
+            ),
+            SignalKind::Warn => (
+                Color::from_rgba(255, 180, 40, 240),
+                Color::from_rgba(255, 220, 120, 200),
+            ),
+            SignalKind::Stop => (
+                Color::from_rgba(255, 70, 70, 240),
+                Color::from_rgba(255, 160, 160, 200),
+            ),
+        };
+        let r = hero_edge(screen_width(), screen_height()) * 0.5 * scale;
+        draw_circle(cx, cy, r * 1.35, Color::new(fill.r, fill.g, fill.b, 0.18));
+        draw_circle(cx, cy, r, fill);
+        draw_circle_lines(cx, cy, r * 1.15, 4.0, ring);
+        // Inner glyph: play triangle / bang / lock bar
+        match kind {
+            SignalKind::Go => {
+                draw_triangle(
+                    vec2(cx - r * 0.25, cy - r * 0.35),
+                    vec2(cx - r * 0.25, cy + r * 0.35),
+                    vec2(cx + r * 0.4, cy),
+                    WHITE,
+                );
+            }
+            SignalKind::Warn => {
+                draw_triangle(
+                    vec2(cx, cy - r * 0.45),
+                    vec2(cx - r * 0.38, cy + r * 0.32),
+                    vec2(cx + r * 0.38, cy + r * 0.32),
+                    Color::from_rgba(40, 20, 0, 255),
+                );
+                draw_circle(cx, cy + r * 0.12, 3.5, Color::from_rgba(40, 20, 0, 255));
+            }
+            SignalKind::Stop => {
+                draw_rectangle(cx - r * 0.35, cy - r * 0.12, r * 0.7, r * 0.24, WHITE);
+            }
         }
     }
 
-    // --- FREEZE! prompt: big snowflake + word ---
-    fn draw_freeze_prompt(&self, cx: f32, cy: f32) {
-        let scale = bounce_scale(self.freeze_pop);
-        let font_size = 44.0 * scale;
-        let size = measure_text("FREEZE!", None, font_size as u16, 1.0);
-        draw_text("FREEZE!", cx - size.width * 0.5, cy + font_size * 0.35, font_size, ICE_BLUE);
-
-        // Big spinning snowflakes on either side.
-        let spin = self.time * 0.8;
-        draw_snowflake(cx - size.width * 0.5 - 30.0, cy, 16.0 * scale, WHITE);
-        draw_snowflake(cx + size.width * 0.5 + 30.0, cy, 16.0 * scale, WHITE);
-        let _ = spin;
+    fn draw_drum_pulse_rings(&self, cx: f32, cy: f32, audio: AudioVisual) {
+        let hit = audio.pulse;
+        let base = hero_edge(screen_width(), screen_height()) * 0.22;
+        for i in 0..2 {
+            let fi = i as f32;
+            let r = base + fi * base * 0.55 + hit * base * 0.35;
+            let a = ((0.55 - fi * 0.18) * (0.35 + hit) * 255.0) as u8;
+            draw_circle_lines(cx, cy, r, 4.0 + hit * 3.0, Color::from_rgba(255, 202, 58, a));
+        }
     }
 
-    // --- Freeze meter: ring that fills as the child holds still ---
+    /// Rotating gesture pictogram during dance — no English verbs.
+    #[allow(dead_code)] // Bottom coach owns the verb; keep for sparse hero accents.
+    fn draw_dance_cue(&self, cx: f32, cy: f32, audio: AudioVisual) {
+        let verb_i = ((self.time / 3.2).floor() as usize) % 8;
+        let scale = hero_edge(screen_width(), screen_height())
+            * 0.5
+            * bounce_scale(self.dance_pop)
+            * (1.0 + audio.pulse * 0.08)
+            * self.cue_spring.value;
+        let color = KID_COLORS[verb_i % KID_COLORS.len()];
+        draw_soft_glow(vec2(cx, cy), scale * 1.35, Color::new(color.r, color.g, color.b, 0.28), 3);
+        draw_gesture_pictogram(GestureCue::from_index(verb_i), vec2(cx, cy), scale, color);
+    }
+
+    /// Pull-to-drop: big down squat silhouette + fire ring (no DROP! text).
+    #[allow(dead_code)]
+    fn draw_drop_cue(&self, cx: f32, cy: f32, audio: AudioVisual) {
+        let pulse = 1.0 + audio.pulse * 0.12 + (self.time * 14.0).sin().abs() * 0.06;
+        let scale = hero_edge(screen_width(), screen_height()) * 0.52 * pulse * self.cue_spring.value;
+        draw_circle_lines(
+            cx,
+            cy,
+            scale * 1.15,
+            6.0,
+            Color::from_rgba(255, 202, 58, (160.0 + audio.pulse * 80.0) as u8),
+        );
+        draw_gesture_pictogram(GestureCue::SquatDown, vec2(cx, cy), scale, KID_COLORS[1]);
+        // Three mystery-box stars — sparse, large
+        for i in 0..3 {
+            let angle = (i as f32 / 3.0) * TAU + self.time * 3.0;
+            let dist = scale * (0.95 + audio.pulse * 0.2);
+            draw_star(
+                cx + angle.cos() * dist,
+                cy + angle.sin() * dist,
+                12.0 + audio.pulse * 6.0,
+                KID_COLORS[i % KID_COLORS.len()],
+            );
+        }
+    }
+
+    /// Freeze: ice stick-figure + snowflake crown (no FLOOR IS LAVA text).
+    #[allow(dead_code)]
+    fn draw_freeze_cue(&self, cx: f32, cy: f32) {
+        let scale = hero_edge(screen_width(), screen_height())
+            * 0.5
+            * bounce_scale(self.freeze_pop.max(0.4))
+            * self.cue_spring.value;
+        draw_circle(cx, cy, scale * 1.25, Color::from_rgba(140, 220, 255, 48));
+        draw_gesture_pictogram(GestureCue::FreezeStill, vec2(cx, cy), scale, ICE_BLUE);
+        draw_snowflake(cx, cy - scale * 0.95, scale * 0.28, ICE_BLUE);
+    }
+
+    /// Lava warning: rising flame stack (no LOOK OUT text).
+    fn draw_lava_warning_cue(&self, cx: f32, cy: f32) {
+        let scale = bounce_scale(self.countdown_pop.max(0.4)) * self.cue_spring.value;
+        let s = hero_edge(screen_width(), screen_height()) * 0.55 * scale;
+        for i in 0..3 {
+            let fi = i as f32;
+            let wobble = (self.time * 8.0 + fi).sin() * 8.0;
+            draw_triangle(
+                vec2(cx + wobble, cy - s * (0.9 + fi * 0.28)),
+                vec2(cx - s * (0.5 - fi * 0.08) + wobble, cy + s * 0.4),
+                vec2(cx + s * (0.5 - fi * 0.08) + wobble, cy + s * 0.4),
+                Color::from_rgba(255, (120 + i * 40) as u8, 40, 235),
+            );
+        }
+        draw_circle(cx, cy + s * 0.22, s * 0.24, Color::from_rgba(255, 240, 120, 255));
+    }
+
+    // --- Freeze meter: quiet ring (dots, not snowflake glitter) ---
     fn draw_freeze_meter(&self, game: &SupernovaGame, cx: f32, cy: f32) {
-        let radius = 110.0 + game.energy * 45.0;
-        let segments = 20;
+        let radius = hero_edge(screen_width(), screen_height()) * 0.72 + game.energy * 20.0;
+        let segments = 16;
         let filled = (segments as f32 * game.freeze_progress) as usize;
 
         for i in 0..segments {
@@ -588,62 +1006,59 @@ impl SupernovaStage {
             let dy = cy + mid_angle.sin() * radius;
 
             if i < filled {
-                draw_snowflake(dx, dy, 5.0, ICE_BLUE);
+                draw_circle(dx, dy, 7.0, ICE_BLUE);
             } else {
-                draw_circle(dx, dy, 2.5, Color::from_rgba(255, 255, 255, 30));
+                draw_circle(dx, dy, 3.5, Color::from_rgba(255, 255, 255, 30));
             }
         }
 
-        // Wobble warning ring when moving during freeze.
         if game.freeze_wobble {
             let pulse = (self.time * 10.0).sin().abs();
             draw_circle_lines(
-                cx, cy, radius + 14.0,
-                3.0 + pulse * 2.0,
+                cx, cy, radius + 16.0,
+                4.0 + pulse * 2.0,
                 Color::from_rgba(255, 89, 94, (120.0 + pulse * 100.0) as u8),
             );
         }
     }
 
-    // --- Action icons: big bouncing icons during dance ---
+    // --- Action icons: bigger bouncing pictograms during dance ---
+    #[allow(dead_code)]
     fn draw_action_icons(&self, game: &SupernovaGame, w: f32, h: f32) {
-        let icon_y = h * 0.84;
-        let icon_r = 22.0;
-        let spacing = w * 0.22;
+        let icon_y = h * 0.86;
+        let icon_r = 28.0;
+        let spacing = w * 0.24;
         let start_x = w * 0.5 - spacing;
 
-        // Punch.
         let punch_bounce = bounce_scale((self.time * 2.0).rem_euclid(1.0));
         draw_circle(start_x, icon_y, icon_r * punch_bounce, KID_COLORS[0]);
         draw_circle(start_x, icon_y, icon_r * 0.5 * punch_bounce, WHITE);
 
-        // Squat (down arrow).
         let squat_bounce = bounce_scale((self.time * 2.0 + 0.33).rem_euclid(1.0));
         let sx = start_x + spacing;
         draw_circle(sx, icon_y, icon_r * squat_bounce, KID_COLORS[3]);
         draw_triangle(
-            vec2(sx, icon_y + icon_r * 0.4),
-            vec2(sx - icon_r * 0.35, icon_y - icon_r * 0.2),
-            vec2(sx + icon_r * 0.35, icon_y - icon_r * 0.2),
+            vec2(sx, icon_y + icon_r * 0.45),
+            vec2(sx - icon_r * 0.4, icon_y - icon_r * 0.25),
+            vec2(sx + icon_r * 0.4, icon_y - icon_r * 0.25),
             WHITE,
         );
 
-        // Clap (two circles meeting).
         let clap_phase = (self.time * 4.0).sin().abs();
-        let clap_gap = icon_r * 0.3 * (1.0 - clap_phase);
+        let clap_gap = icon_r * 0.35 * (1.0 - clap_phase);
         let cx_icon = start_x + spacing * 2.0;
-        draw_circle(cx_icon - clap_gap, icon_y, icon_r * 0.55, KID_COLORS[1]);
-        draw_circle(cx_icon + clap_gap, icon_y, icon_r * 0.55, KID_COLORS[4]);
+        draw_circle(cx_icon - clap_gap, icon_y, icon_r * 0.6, KID_COLORS[1]);
+        draw_circle(cx_icon + clap_gap, icon_y, icon_r * 0.6, KID_COLORS[4]);
 
-        // On-beat glow.
         for feedback in game.feedback.iter() {
             if feedback.hit && feedback.on_beat {
-                draw_circle_lines(w * 0.5, icon_y, icon_r * 2.5, 3.0, Color::from_rgba(138, 201, 38, 180));
+                draw_circle_lines(w * 0.5, icon_y, icon_r * 2.8, 3.5, Color::from_rgba(138, 201, 38, 180));
             }
         }
     }
 
     // --- Combo stars during dance ---
+    #[allow(dead_code)]
     fn draw_combo_stars(&self, game: &SupernovaGame, w: f32, h: f32) {
         if game.combo < 2 {
             return;
@@ -666,6 +1081,7 @@ impl SupernovaStage {
     }
 
     // --- Freeze stars: top-left row of earned ice stars ---
+    #[allow(dead_code)]
     fn draw_freeze_stars(&self, game: &SupernovaGame, w: f32, h: f32) {
         if game.freeze_stars == 0 {
             return;
@@ -682,25 +1098,40 @@ impl SupernovaStage {
 
     // --- Perfect freeze star pop ---
     fn draw_perfect_star(&self, cx: f32, cy: f32) {
-        let pop = bounce_scale((self.time * 2.0).rem_euclid(1.0));
-        draw_star(cx, cy, 30.0 * pop, KID_COLORS[1]);
-        for i in 0..6 {
-            let angle = (i as f32 / 6.0) * TAU + self.time * 3.0;
-            draw_star(cx + angle.cos() * 45.0, cy + angle.sin() * 45.0, 8.0, ICE_BLUE);
+        let pop = bounce_scale((self.time * 2.0).rem_euclid(1.0)) * self.result_spring.value;
+        let r = hero_edge(screen_width(), screen_height()) * 0.42 * pop;
+        draw_star(cx, cy, r, KID_COLORS[1]);
+        for i in 0..4 {
+            let angle = (i as f32 / 4.0) * TAU + self.time * 3.0;
+            draw_star(cx + angle.cos() * r * 1.45, cy + angle.sin() * r * 1.45, r * 0.28, ICE_BLUE);
         }
     }
 
-    // --- Countdown: BIG bouncy number ---
+    // --- Countdown: BIG bouncy digits only (universal — not English words) ---
     fn draw_countdown(&self, game: &SupernovaGame, cx: f32, cy: f32) {
         let num = game.countdown_remaining.ceil() as u8;
-        let label = if num > 0 { format!("{num}") } else { "GO!".to_string() };
         let scale = bounce_scale(self.countdown_pop);
-        let font_size = 80.0 * scale;
-        let color = KID_COLORS[(3 - num as usize).clamp(0, 5) % KID_COLORS.len()];
-
+        let edge = hero_edge(screen_width(), screen_height());
+        if num == 0 {
+            let r = edge * 0.48 * scale;
+            draw_circle(cx, cy, r * 1.4, Color::from_rgba(80, 220, 90, 80));
+            draw_circle(cx, cy, r, Color::from_rgba(80, 220, 90, 230));
+            draw_triangle(
+                vec2(cx - r * 0.28, cy - r * 0.4),
+                vec2(cx - r * 0.28, cy + r * 0.4),
+                vec2(cx + r * 0.45, cy),
+                WHITE,
+            );
+            return;
+        }
+        // Vector-ish big disc + numeral — still readable; VO says Three/Two/One.
+        let font_size = edge * 0.85 * scale;
+        let label = format!("{num}");
+        let color = KID_COLORS[(num as usize).saturating_sub(1) % KID_COLORS.len()];
+        draw_circle(cx, cy, edge * 0.42 * scale, Color::new(color.r, color.g, color.b, 0.22));
+        draw_circle_lines(cx, cy, edge * 0.48 * scale, 5.0, Color::from_rgba(255, 255, 255, 120));
         let size = measure_text(&label, None, font_size as u16, 1.0);
         draw_text(&label, cx - size.width * 0.5, cy + font_size * 0.35, font_size, color);
-        draw_circle_lines(cx, cy, 60.0 * scale, 4.0, Color::from_rgba(255, 255, 255, 100));
     }
 
     fn draw_confetti(&self, shake: Vec2) {
@@ -742,40 +1173,58 @@ impl SupernovaStage {
         }
     }
 
-    // --- Result: happy mascot + stars + one big word ---
+    // --- Result: mascot + stars + clap pictogram (no word walls) ---
     fn draw_result(&self, game: &SupernovaGame, w: f32, h: f32, audio: AudioVisual) {
         let cx = w * 0.5;
+        let afterglow = (self.time * 1.5).sin().abs();
+        draw_rectangle(
+            0.0,
+            0.0,
+            w,
+            h,
+            Color::new(1.0, 0.72, 0.22, 0.04 + afterglow * 0.05 + audio.energy * 0.02),
+        );
 
-        self.draw_mascot(game, cx, h * 0.30, 1.0, false, true, audio);
+        self.draw_mascot(game, cx, h * 0.28, 1.0, false, true, audio);
 
-        let word = match game.outcome {
-            Some(SupernovaOutcome::FullSupernova) => "WOW!",
-            _ => "YAY!",
-        };
-        let pop = bounce_scale((self.time * 0.8).rem_euclid(1.0));
-        let font_size = 56.0 * pop;
-        let size = measure_text(word, None, font_size as u16, 1.0);
-        draw_text(word, cx - size.width * 0.5, h * 0.55 + font_size * 0.35, font_size, KID_COLORS[1]);
+        // Celebration burst instead of WOW/YAY text
+        let pop = self.result_spring.value * bounce_scale((self.time * 0.8).rem_euclid(1.0));
+        let burst_r = hero_edge(w, h) * 0.38 * pop;
+        draw_soft_glow(
+            vec2(cx, h * 0.52),
+            burst_r * 1.6,
+            Color::from_rgba(255, 202, 58, 120),
+            3,
+        );
+        draw_circle(cx, h * 0.52, burst_r * 1.3, Color::from_rgba(255, 202, 58, 50));
+        draw_star(cx, h * 0.52, burst_r, KID_COLORS[1]);
+        for i in 0..4 {
+            let angle = (i as f32 / 4.0) * TAU + self.time;
+            draw_star(
+                cx + angle.cos() * burst_r * 1.55,
+                h * 0.52 + angle.sin() * burst_r * 1.55,
+                burst_r * 0.22,
+                KID_COLORS[i % KID_COLORS.len()],
+            );
+        }
 
-        // Stars = freeze stars earned (1–3 shown, scaled).
         let star_count = (game.freeze_stars as usize).clamp(1, 3);
-        let star_r = 20.0;
+        let star_r = hero_edge(w, h) * 0.12;
         let total = star_count as f32 * star_r * 3.0;
         let sx = cx - total * 0.5 + star_r * 1.5;
         for i in 0..star_count {
             let s_pop = bounce_scale((self.time * 1.2 + i as f32 * 0.2).rem_euclid(1.0));
-            draw_star(sx + i as f32 * star_r * 3.0, h * 0.65, star_r * s_pop, KID_COLORS[1]);
+            draw_star(sx + i as f32 * star_r * 3.0, h * 0.68, star_r * s_pop, KID_COLORS[1]);
         }
 
-        // Replay: animated clapping hands icon.
-        self.draw_clap_prompt(cx, h * 0.82);
+        self.draw_clap_prompt(cx, h * 0.84);
     }
 
     // --- Clap prompt: two big hands clapping ---
     fn draw_clap_prompt(&self, cx: f32, cy: f32) {
         let pulse = (self.time * 5.0).sin().abs();
-        let hand_r = 28.0;
-        let gap = 5.0 + (1.0 - pulse) * 25.0;
+        let hand_r = hero_edge(screen_width(), screen_height()) * 0.22;
+        let gap = hand_r * 0.15 + (1.0 - pulse) * hand_r * 0.85;
 
         draw_circle(cx - gap, cy, hand_r, KID_COLORS[1]);
         draw_circle(cx - gap, cy, hand_r * 0.5, WHITE);
@@ -785,11 +1234,11 @@ impl SupernovaStage {
         if pulse > 0.85 {
             for i in 0..4 {
                 let angle = (i as f32 / 4.0) * TAU + self.time * 2.0;
-                let dist = 35.0 + pulse * 10.0;
+                let dist = hand_r * 1.4 + pulse * hand_r * 0.3;
                 draw_star(
                     cx + angle.cos() * dist,
                     cy + angle.sin() * dist,
-                    6.0,
+                    hand_r * 0.22,
                     KID_COLORS[i % KID_COLORS.len()],
                 );
             }
@@ -843,4 +1292,131 @@ fn lerp_color(a: Color, b: Color, t: f32) -> Color {
         ((a.b + (b.b - a.b) * t) * 255.0) as u8,
         255,
     )
+}
+
+fn average_pose_point(pose: PoseFrame, a: usize, b: usize) -> Vec2 {
+    vec2(
+        (pose.keypoints[a].x + pose.keypoints[b].x) * 0.5,
+        (pose.keypoints[a].y + pose.keypoints[b].y) * 0.5,
+    )
+}
+
+#[derive(Clone, Copy)]
+enum SignalKind {
+    Go,
+    Warn,
+    Stop,
+}
+
+#[derive(Clone, Copy)]
+enum GestureCue {
+    Jump,
+    Clap,
+    Paint,
+    Tiptoe,
+    Wiggle,
+    Reach,
+    March,
+    RoyalWave,
+    SquatDown,
+    FreezeStill,
+}
+
+impl GestureCue {
+    fn from_index(i: usize) -> Self {
+        match i % 8 {
+            0 => Self::Jump,
+            1 => Self::Clap,
+            2 => Self::Paint,
+            3 => Self::Tiptoe,
+            4 => Self::Wiggle,
+            5 => Self::Reach,
+            6 => Self::March,
+            _ => Self::RoyalWave,
+        }
+    }
+}
+
+/// Big silhouette gestures readable at 1.5–4m — no text.
+fn draw_gesture_pictogram(cue: GestureCue, center: Vec2, scale: f32, color: Color) {
+    let s = scale;
+    let cx = center.x;
+    let cy = center.y;
+    match cue {
+        GestureCue::Jump => {
+            draw_circle(cx, cy - s * 0.42, s * 0.16, WHITE);
+            draw_line(cx, cy - s * 0.26, cx, cy + s * 0.05, 5.0, color);
+            draw_line(cx, cy - s * 0.1, cx - s * 0.35, cy - s * 0.28, 4.0, color);
+            draw_line(cx, cy - s * 0.1, cx + s * 0.35, cy - s * 0.28, 4.0, color);
+            draw_line(cx, cy + s * 0.05, cx - s * 0.28, cy + s * 0.42, 4.0, color);
+            draw_line(cx, cy + s * 0.05, cx + s * 0.28, cy + s * 0.42, 4.0, color);
+            draw_triangle(
+                vec2(cx, cy - s * 0.72),
+                vec2(cx - s * 0.14, cy - s * 0.52),
+                vec2(cx + s * 0.14, cy - s * 0.52),
+                WHITE,
+            );
+        }
+        GestureCue::Clap => {
+            let gap = s * 0.12;
+            draw_circle(cx - s * 0.32 - gap, cy, s * 0.28, color);
+            draw_circle(cx + s * 0.32 + gap, cy, s * 0.28, color);
+            draw_circle(cx - s * 0.32 - gap, cy, s * 0.12, WHITE);
+            draw_circle(cx + s * 0.32 + gap, cy, s * 0.12, WHITE);
+        }
+        GestureCue::Paint | GestureCue::Reach | GestureCue::RoyalWave => {
+            draw_circle(cx, cy - s * 0.15, s * 0.16, WHITE);
+            draw_line(cx, cy, cx, cy + s * 0.35, 5.0, color);
+            draw_line(cx, cy + s * 0.05, cx - s * 0.22, cy + s * 0.45, 4.0, color);
+            draw_line(cx, cy + s * 0.05, cx + s * 0.22, cy + s * 0.45, 4.0, color);
+            draw_line(cx, cy - s * 0.05, cx - s * 0.4, cy - s * 0.55, 5.0, color);
+            draw_line(cx, cy - s * 0.05, cx + s * 0.4, cy - s * 0.55, 5.0, color);
+            draw_circle(cx - s * 0.42, cy - s * 0.58, s * 0.1, KID_COLORS[1]);
+            draw_circle(cx + s * 0.42, cy - s * 0.58, s * 0.1, KID_COLORS[4]);
+        }
+        GestureCue::Tiptoe => {
+            draw_circle(cx, cy - s * 0.35, s * 0.14, WHITE);
+            draw_line(cx, cy - s * 0.2, cx, cy + s * 0.2, 4.0, color);
+            draw_line(cx, cy + s * 0.2, cx - s * 0.12, cy + s * 0.5, 3.5, color);
+            draw_line(cx, cy + s * 0.2, cx + s * 0.12, cy + s * 0.5, 3.5, color);
+            draw_circle(cx - s * 0.12, cy + s * 0.55, 4.0, color);
+            draw_circle(cx + s * 0.12, cy + s * 0.55, 4.0, color);
+        }
+        GestureCue::Wiggle => {
+            draw_circle(cx, cy - s * 0.3, s * 0.15, WHITE);
+            for i in 0..4 {
+                let t = i as f32 / 3.0;
+                let x = cx + ((t * TAU).sin()) * s * 0.25;
+                let y = cy - s * 0.1 + t * s * 0.55;
+                draw_circle(x, y, s * 0.08, color);
+            }
+        }
+        GestureCue::March => {
+            draw_circle(cx, cy - s * 0.38, s * 0.15, WHITE);
+            draw_line(cx, cy - s * 0.22, cx, cy + s * 0.1, 5.0, color);
+            draw_line(cx, cy + s * 0.1, cx - s * 0.25, cy + s * 0.45, 4.0, color);
+            draw_line(cx, cy + s * 0.1, cx + s * 0.2, cy + s * 0.35, 4.0, color);
+            draw_line(cx, cy - s * 0.05, cx + s * 0.4, cy - s * 0.25, 4.0, color);
+        }
+        GestureCue::SquatDown => {
+            draw_circle(cx - s * 0.18, cy - s * 0.15, s * 0.14, WHITE);
+            draw_line(cx - s * 0.18, cy, cx, cy + s * 0.15, 5.0, color);
+            draw_line(cx, cy + s * 0.15, cx - s * 0.35, cy + s * 0.4, 4.0, color);
+            draw_line(cx, cy + s * 0.15, cx + s * 0.25, cy + s * 0.4, 4.0, color);
+            draw_triangle(
+                vec2(cx, cy + s * 0.55),
+                vec2(cx - s * 0.22, cy + s * 0.25),
+                vec2(cx + s * 0.22, cy + s * 0.25),
+                Color::from_rgba(255, 202, 58, 255),
+            );
+        }
+        GestureCue::FreezeStill => {
+            draw_circle(cx, cy - s * 0.4, s * 0.16, ICE_BLUE);
+            draw_line(cx, cy - s * 0.22, cx, cy + s * 0.15, 6.0, ICE_BLUE);
+            draw_line(cx - s * 0.35, cy - s * 0.05, cx + s * 0.35, cy - s * 0.05, 5.0, ICE_BLUE);
+            draw_line(cx, cy + s * 0.15, cx - s * 0.2, cy + s * 0.5, 5.0, ICE_BLUE);
+            draw_line(cx, cy + s * 0.15, cx + s * 0.2, cy + s * 0.5, 5.0, ICE_BLUE);
+            draw_rectangle(cx - s * 0.28, cy - s * 0.08, s * 0.56, s * 0.1, WHITE);
+        }
+    }
 }

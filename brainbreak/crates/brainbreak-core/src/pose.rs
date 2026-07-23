@@ -28,10 +28,12 @@ pub enum Action {
     RightUp = 1 << 5,
     Clap = 1 << 6,
     Pause = 1 << 7,
+    /// Both wrists clearly below hips — Pull-to-Drop release without Hands landmarks.
+    HandsDown = 1 << 8,
 }
 
 impl Action {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::MoveLeft,
         Self::MoveRight,
         Self::Jump,
@@ -40,6 +42,7 @@ impl Action {
         Self::RightUp,
         Self::Clap,
         Self::Pause,
+        Self::HandsDown,
     ];
 
     pub const GAMEPLAY_MASK: u32 = Self::MoveLeft.mask()
@@ -49,6 +52,9 @@ impl Action {
         | Self::LeftUp.mask()
         | Self::RightUp.mask()
         | Self::Clap.mask();
+
+    /// Supernova Drop release verbs once the core is trembling (no MediaPipe Hands).
+    pub const DROP_RELEASE_MASK: u32 = Self::Squat.mask() | Self::HandsDown.mask();
 
     pub const fn mask(self) -> u32 {
         self as u32
@@ -64,6 +70,7 @@ impl Action {
             Self::RightUp => "RIGHT HAND UP",
             Self::Clap => "CLAP",
             Self::Pause => "PAUSE",
+            Self::HandsDown => "HANDS DOWN",
         }
     }
 
@@ -86,6 +93,8 @@ pub struct RecognizerConfig {
     pub jump_distance: f32,
     pub squat_distance: f32,
     pub raised_hand_distance: f32,
+    /// Wrists must sit this far below hips to count as a reach-down / pull.
+    pub hands_down_distance: f32,
     pub clap_width_ratio: f32,
     pub pause_hold_ms: f64,
     pub cooldown_ms: f64,
@@ -100,6 +109,7 @@ impl Default for RecognizerConfig {
             jump_distance: 0.065,
             squat_distance: 0.075,
             raised_hand_distance: 0.035,
+            hands_down_distance: 0.05,
             clap_width_ratio: 0.38,
             pause_hold_ms: 1_000.0,
             cooldown_ms: 220.0,
@@ -114,7 +124,7 @@ pub struct PoseRecognizer {
     neutral_center_x: Option<f32>,
     neutral_samples: u16,
     previous_active: u32,
-    last_trigger_ms: [f64; 8],
+    last_trigger_ms: [f64; 9],
     pause_started_ms: Option<f64>,
 }
 
@@ -132,7 +142,7 @@ impl PoseRecognizer {
             neutral_center_x: None,
             neutral_samples: 0,
             previous_active: 0,
-            last_trigger_ms: [-1_000.0; 8],
+            last_trigger_ms: [-1_000.0; 9],
             pause_started_ms: None,
         }
     }
@@ -199,6 +209,15 @@ impl PoseRecognizer {
         }
         if right_hand_up {
             active |= Action::RightUp.mask();
+        }
+        let left_hand_down = lw.confidence > self.config.minimum_keypoint_confidence
+            && lh.confidence > self.config.minimum_keypoint_confidence
+            && lw.y > lh.y + self.config.hands_down_distance;
+        let right_hand_down = rw.confidence > self.config.minimum_keypoint_confidence
+            && rh.confidence > self.config.minimum_keypoint_confidence
+            && rw.y > rh.y + self.config.hands_down_distance;
+        if left_hand_down && right_hand_down && !left_hand_up && !right_hand_up {
+            active |= Action::HandsDown.mask();
         }
         let wrist_distance = ((lw.x - rw.x).powi(2) + (lw.y - rw.y).powi(2)).sqrt();
         if lw.confidence > self.config.minimum_keypoint_confidence

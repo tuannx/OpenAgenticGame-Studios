@@ -1,6 +1,7 @@
 use brainbreak_core::{GameMode, PLAYER_CAPACITY, RunnerGame, RunnerOutcome, RunnerPhase};
 use macroquad::prelude::*;
 
+use crate::juice::hero_edge;
 use crate::platform::{ModeArt, player_color};
 use crate::visuals::draw_round_panel;
 
@@ -449,13 +450,7 @@ fn draw_mode_prompt_art(bounds: Rect, mode: GameMode, mode_art: &ModeArt) {
         2.0,
         Color::new(0.40, 0.88, 1.0, 0.58),
     );
-    draw_text(
-        mode_label(mode),
-        bounds.x + 10.0,
-        bounds.y + bounds.h - 9.0,
-        15.0,
-        Color::from_rgba(226, 232, 240, 255),
-    );
+    let _ = mode_label(mode);
 }
 
 fn draw_motion_camera(center: Vec2, scale: f32, color: Color) {
@@ -617,24 +612,12 @@ fn draw_motion_prompt_overlay(
         accent,
     );
     draw_mode_prompt_art(layout.art, mode, mode_art);
-    draw_text(
-        presentation.title,
-        layout.content.x,
-        layout.content.y + 36.0,
-        layout.title_font as f32,
-        accent,
-    );
-    draw_text(
-        presentation.instruction,
-        layout.content.x,
-        layout.content.y + 63.0,
-        layout.instruction_font as f32,
-        Color::from_rgba(226, 232, 240, 255),
-    );
+    // Title/instruction words removed — VO + motion figures own guidance.
+    let figure_scale = layout.figure_scale * 1.85;
     for (index, figure) in presentation.figures.into_iter().enumerate() {
         draw_motion_figure(
             layout.figure_centers[index],
-            layout.figure_scale,
+            figure_scale,
             figure,
             accent,
         );
@@ -862,15 +845,8 @@ fn draw_countdown_overlay(width: f32, height: f32, remaining_seconds: f32) {
         accent,
     );
     let title = "GET READY";
-    let title_font = if width < 520.0 { 28 } else { 34 };
-    let title_size = measure_text(title, None, title_font, 1.0);
-    draw_text(
-        title,
-        layout.panel.x + (layout.panel.w - title_size.width) * 0.5,
-        layout.title_y,
-        title_font as f32,
-        accent,
-    );
+    let _ = title;
+    // Shape-only countdown — VO speaks Three/Two/One/Go.
 
     draw_circle_lines(
         layout.ring_center.x,
@@ -991,29 +967,13 @@ fn draw_pause_overlay(width: f32, height: f32, runner: &RunnerGame) {
     }
 
     let title_font = if width < 520.0 { 31 } else { 36 };
-    let title_size = measure_text(presentation.title, None, title_font, 1.0);
-    draw_text(
-        presentation.title,
-        layout.panel.x + (layout.panel.w - title_size.width) * 0.5,
-        layout.title_y,
-        title_font as f32,
-        Color::from_rgba(103, 232, 249, 255),
-    );
-
-    let instruction_font = if width < 520.0 { 16 } else { 19 };
-    let instruction_size = measure_text(presentation.instruction, None, instruction_font, 1.0);
-    draw_text(
-        presentation.instruction,
-        layout.panel.x + (layout.panel.w - instruction_size.width) * 0.5,
-        layout.instruction_y,
-        instruction_font as f32,
-        accent,
-    );
+    let _ = (presentation.title, title_font);
+    // Pause bars + body figures only — clap/return guidance is spoken.
 
     if presentation.figures[1] == MotionFigure::Hidden {
         draw_motion_figure(
             layout.single_figure_center,
-            layout.figure_scale,
+            layout.figure_scale * 2.2,
             presentation.figures[0],
             accent,
         );
@@ -1021,7 +981,7 @@ fn draw_pause_overlay(width: f32, height: f32, runner: &RunnerGame) {
         for (index, figure) in presentation.figures.into_iter().enumerate() {
             draw_motion_figure(
                 layout.duo_figure_centers[index],
-                layout.figure_scale,
+                layout.figure_scale * 2.0,
                 figure,
                 player_color(index),
             );
@@ -1048,37 +1008,56 @@ pub struct ResultIndicatorLayout {
 }
 
 pub fn result_layout(width: f32, height: f32) -> ResultLayout {
-    let panel_width = (width - 24.0).min(660.0);
-    let panel_height = if height < 500.0 { 268.0 } else { 304.0 };
+    // Soft-select chips share the Zero-Touch contract: shorter edge ≥ 20% min viewport
+    // (ship via hero_edge = 28%). Ít đồ: three huge chips dominate; panel grows to fit.
+    let edge = hero_edge(width, height);
+    let gap = (width * 0.018).clamp(8.0, 16.0);
+    let chip_margin = (width * 0.028).clamp(12.0, 22.0);
+    let panel_width = (width - 16.0).max(120.0);
+    let chip_width = ((panel_width - chip_margin * 2.0 - gap * 2.0) / 3.0).max(1.0);
+    let chip_height = edge;
+    let bottom_pad = 24.0_f32.min(height * 0.08).max(12.0);
+    let mut top_pad = (edge * 0.35).clamp(24.0, height * 0.2);
+    let mut panel_height = (top_pad + chip_height + bottom_pad).min(height - 16.0);
+    if panel_height < chip_height + bottom_pad + 8.0 {
+        panel_height = (chip_height + bottom_pad + 8.0).min(height - 8.0);
+    }
+    top_pad = (panel_height - chip_height - bottom_pad).max(4.0);
     let panel = Rect::new(
         (width - panel_width) * 0.5,
         (height - panel_height) * 0.5,
         panel_width,
         panel_height,
     );
-    let gap = 8.0;
-    let chip_margin = 18.0;
     ResultLayout {
         panel,
-        chip_width: (panel.w - chip_margin * 2.0 - gap * 2.0) / 3.0,
-        chip_height: if height < 500.0 { 76.0 } else { 92.0 },
-        chip_y: panel.y + if height < 500.0 { 104.0 } else { 132.0 },
-        choose_y: panel.y + panel.h - if height < 500.0 { 48.0 } else { 44.0 },
+        chip_width,
+        chip_height,
+        chip_y: panel.y + top_pad,
+        choose_y: panel.y + panel.h - bottom_pad * 0.5,
     }
 }
 
 pub fn result_title(outcome: Option<RunnerOutcome>) -> &'static str {
     match outcome {
-        Some(RunnerOutcome::BreakComplete) => "BREAK COMPLETE",
-        Some(RunnerOutcome::EnergySpent) | None => "NICE RUN!",
+        Some(RunnerOutcome::BreakComplete) => "GLOW COMPLETE",
+        Some(RunnerOutcome::EnergySpent) | None => "AFTERGLOW!",
     }
 }
 
+pub fn result_share_hint() -> &'static str {
+    ""
+}
+
+pub fn result_action_hint() -> &'static str {
+    ""
+}
+
 pub fn result_chip_rect(layout: ResultLayout, index: usize) -> Rect {
-    const GAP: f32 = 8.0;
-    const CHIP_MARGIN: f32 = 18.0;
+    let gap = (layout.panel.w * 0.018).clamp(8.0, 16.0);
+    let chip_margin = (layout.panel.w * 0.028).clamp(12.0, 22.0);
     Rect::new(
-        layout.panel.x + CHIP_MARGIN + index as f32 * (layout.chip_width + GAP),
+        layout.panel.x + chip_margin + index as f32 * (layout.chip_width + gap),
         layout.chip_y,
         layout.chip_width,
         layout.chip_height,
@@ -1160,14 +1139,23 @@ fn draw_result_lock(chip: Rect, color: Color) {
 fn draw_result_overlay(width: f32, height: f32, runner: &RunnerGame, mode_art: &ModeArt) {
     let layout = result_layout(width, height);
     let panel = layout.panel;
+    let afterglow = ((get_time() as f32) * 1.6).sin().abs();
+    // Soft full-screen afterglow wash — Garden DNA without a generative engine.
+    draw_rectangle(
+        0.0,
+        0.0,
+        width,
+        height,
+        Color::new(0.08, 0.55, 0.72, 0.045 + afterglow * 0.035),
+    );
     draw_round_panel(panel, Color::new(0.015, 0.02, 0.09, 0.94));
     draw_rectangle_lines(
         panel.x,
         panel.y,
         panel.w,
         panel.h,
-        3.0,
-        Color::new(0.40, 0.88, 1.0, 0.82),
+        3.0 + afterglow * 1.5,
+        Color::new(0.40, 0.88, 1.0, 0.72 + afterglow * 0.22),
     );
 
     let leader = runner
@@ -1176,51 +1164,28 @@ fn draw_result_overlay(width: f32, height: f32, runner: &RunnerGame, mode_art: &
         .filter(|player| player.evaluated)
         .max_by_key(|player| player.score)
         .unwrap_or(&runner.players[0]);
-    let title = result_title(runner.result_outcome);
-    let title_font = if height < 500.0 { 30 } else { 38 };
-    let title_size = measure_text(title, None, title_font, 1.0);
-    draw_text(
-        title,
-        panel.x + (panel.w - title_size.width) * 0.5,
-        panel.y + if height < 500.0 { 38.0 } else { 49.0 },
-        title_font as f32,
-        Color::from_rgba(103, 232, 249, 255),
+    // Pictogram celebration — VO says "You did it!" / clap replay (no word walls).
+    let star_y = panel.y + if height < 500.0 { 42.0 } else { 52.0 };
+    let star_r = (panel.w.min(panel.h) * 0.11).max(26.0);
+    draw_poly(
+        panel.x + panel.w * 0.5,
+        star_y,
+        5,
+        star_r,
+        -90.0,
+        Color::from_rgba(255, 202, 58, 255),
     );
-
-    let score = format!(
-        "SCORE {:05}   /   BEST {:05}",
-        leader.score, leader.best_score
-    );
-    let score_font = if width < 520.0 { 18 } else { 22 };
+    let score = format!("{:05}", leader.score);
+    let score_font = if width < 520.0 { 28 } else { 34 };
     let score_size = measure_text(&score, None, score_font, 1.0);
     draw_text(
         &score,
         panel.x + (panel.w - score_size.width) * 0.5,
-        panel.y + if height < 500.0 { 70.0 } else { 87.0 },
+        star_y + star_r + 30.0,
         score_font as f32,
         WHITE,
     );
-
-    let achievement = if leader.new_best {
-        format!("NEW PERSONAL BEST   /   COMBO x{}", leader.best_combo)
-    } else if leader.best_score > leader.score {
-        format!(
-            "{} TO BEST   /   COMBO x{}",
-            leader.best_score - leader.score,
-            leader.best_combo
-        )
-    } else {
-        format!("PERSONAL BEST HELD   /   COMBO x{}", leader.best_combo)
-    };
-    let achievement_font = if width < 520.0 { 13 } else { 15 };
-    let achievement_size = measure_text(&achievement, None, achievement_font, 1.0);
-    draw_text(
-        &achievement,
-        panel.x + (panel.w - achievement_size.width) * 0.5,
-        panel.y + if height < 500.0 { 94.0 } else { 116.0 },
-        achievement_font as f32,
-        Color::from_rgba(196, 181, 253, 255),
-    );
+    let _ = result_title(runner.result_outcome);
 
     let choices = result_choices(result_duo_available(runner));
     for (index, (mode, available)) in choices.into_iter().enumerate() {
@@ -1260,13 +1225,6 @@ fn draw_result_overlay(width: f32, height: f32, runner: &RunnerGame, mode_art: &
                 },
             );
         }
-        draw_rectangle(
-            art_bounds.x,
-            art_bounds.y + art_bounds.h - 28.0,
-            art_bounds.w,
-            28.0,
-            Color::new(0.01, 0.02, 0.08, if selected { 0.72 } else { 0.82 }),
-        );
         if !available {
             draw_rectangle(
                 art_bounds.x,
@@ -1281,32 +1239,11 @@ fn draw_result_overlay(width: f32, height: f32, runner: &RunnerGame, mode_art: &
             chip.y,
             chip.w,
             chip.h,
-            if selected { 4.0 } else { 1.0 },
+            if selected { 5.0 } else { 1.5 },
             if selected {
                 WHITE
             } else {
                 Color::new(0.45, 0.32, 0.95, 0.42)
-            },
-        );
-        let label = match mode {
-            GameMode::MirrorBeat => "MIRROR",
-            GameMode::BeatStrike => "STRIKE",
-            GameMode::DuoGroove if available => "DUO",
-            GameMode::DuoGroove => "P2 NEEDED",
-        };
-        let label_font = if width < 520.0 { 12 } else { 15 };
-        let label_size = measure_text(label, None, label_font, 1.0);
-        draw_text(
-            label,
-            chip.x + (chip.w - label_size.width) * 0.5,
-            chip.y + chip.h - 11.0,
-            label_font as f32,
-            if !available {
-                Color::from_rgba(203, 213, 225, 255)
-            } else if selected {
-                Color::from_rgba(103, 232, 249, 255)
-            } else {
-                Color::from_rgba(148, 163, 184, 255)
             },
         );
         if !available {
@@ -1317,30 +1254,23 @@ fn draw_result_overlay(width: f32, height: f32, runner: &RunnerGame, mode_art: &
                 indicator.center.x,
                 indicator.center.y,
                 4,
-                indicator.radius,
+                indicator.radius * 1.35,
                 45.0,
                 Color::from_rgba(103, 232, 249, 255),
             );
         }
     }
 
-    let choose_hint = "LEAN LEFT / RIGHT TO CHOOSE";
-    let play_hint = "CLAP TO PLAY";
-    let hint_font = if width < 520.0 { 14 } else { 17 };
-    let choose_size = measure_text(choose_hint, None, hint_font, 1.0);
-    let play_size = measure_text(play_hint, None, hint_font + 1, 1.0);
-    draw_text(
-        choose_hint,
-        panel.x + (panel.w - choose_size.width) * 0.5,
-        layout.choose_y,
-        hint_font as f32,
-        Color::from_rgba(226, 232, 240, 255),
-    );
-    draw_text(
-        play_hint,
-        panel.x + (panel.w - play_size.width) * 0.5,
-        layout.choose_y + if height < 500.0 { 20.0 } else { 23.0 },
-        (hint_font + 1) as f32,
-        Color::from_rgba(103, 232, 249, 255),
-    );
+    // Replay clap pictogram — spoken "Clap to play!" + big hands
+    {
+        let cx = panel.x + panel.w * 0.5;
+        let cy = layout.choose_y + if height < 500.0 { 18.0 } else { 22.0 };
+        let pulse = (macroquad::time::get_time() as f32 * 5.0).sin().abs();
+        let hand_r = (width.min(height) * 0.045).max(22.0);
+        let gap = hand_r * 0.2 + (1.0 - pulse) * hand_r * 0.9;
+        draw_circle(cx - gap, cy, hand_r, Color::from_rgba(255, 202, 58, 255));
+        draw_circle(cx - gap, cy, hand_r * 0.5, WHITE);
+        draw_circle(cx + gap, cy, hand_r, Color::from_rgba(148, 103, 189, 255));
+        draw_circle(cx + gap, cy, hand_r * 0.5, WHITE);
+    }
 }

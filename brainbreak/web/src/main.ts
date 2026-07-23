@@ -1,4 +1,6 @@
-import { musicEngine } from './audio';
+import { musicEngine, trackForProductFamily } from './audio';
+import { productFamilyForMode } from './product-family';
+import type { PlayableGameMode } from './motion-capability';
 import {
   registerBrainBreakPlugin,
   setCameraEvaluation,
@@ -57,6 +59,8 @@ const gateError = document.querySelector<HTMLElement>('#gate-error')!;
 const audioButton = document.querySelector<HTMLButtonElement>('#audio-button')!;
 const reduceMotionButton = document.querySelector<HTMLButtonElement>('#reduce-motion-button')!;
 const trackStatus = document.querySelector<HTMLElement>('#track-status')!;
+const trackSourceLink = document.querySelector<HTMLAnchorElement>('#track-source-link');
+const trackLicenseLink = document.querySelector<HTMLAnchorElement>('#track-license-link');
 const readyGate = document.querySelector<HTMLElement>('#ready-gate')!;
 const readyModeTitle = document.querySelector<HTMLElement>('#ready-mode-title')!;
 const readyPoseImg = document.querySelector<HTMLImageElement>('#ready-pose-img')!;
@@ -66,45 +70,10 @@ const readyHoldRing = document.querySelector<HTMLElement>('#ready-hold-ring')!;
 const readyGestureHint = document.querySelector<HTMLElement>('#ready-gesture-hint')!;
 const modeCards = document.querySelectorAll<HTMLElement>('.mode-card');
 
-// --- Custom games from Studio (localStorage) ---
+// Custom Studio games stay off the player shell (SCAMPER: hide MY GAMES).
+// Playback remains via Studio and ?game=<id> deep links against localStorage.
 const CUSTOM_GAMES_KEY = 'brainbreak-custom-games';
 
-/** Deselect every mode card (built-in + custom) and activate the matching custom game card. */
-function markCustomGameActive(configId: string): void {
-  document.querySelectorAll<HTMLElement>('.mode-card').forEach((card) => {
-    const selected = card.dataset.mode === 'custom' && card.dataset.configId === configId;
-    card.classList.toggle('active', selected);
-    card.setAttribute('aria-checked', String(selected));
-  });
-}
-
-function initCustomGames(): void {
-  const section = document.querySelector<HTMLElement>('#custom-games-section');
-  if (!section) return;
-  let games: { id: string; title: string; mechanic: string }[] = [];
-  try { games = JSON.parse(localStorage.getItem(CUSTOM_GAMES_KEY) ?? '[]'); } catch { /* empty */ }
-  if (games.length === 0) return;
-  section.style.display = '';
-  section.innerHTML = games.map((g) => `
-    <div class="mode-card" data-mode="custom" data-config-id="${g.id}" role="radio" aria-checked="false" tabindex="-1">
-      <div class="mode-badge">MY GAME</div>
-      <div class="mode-info"><h3>${g.title}</h3><small>${g.mechanic}</small></div>
-    </div>
-  `).join('');
-  section.querySelectorAll<HTMLElement>('.mode-card').forEach((card) => {
-    card.addEventListener('click', () => {
-      const configId = card.dataset.configId;
-      const all: { id: string }[] = JSON.parse(localStorage.getItem(CUSTOM_GAMES_KEY) ?? '[]');
-      const config = all.find((c) => c.id === configId);
-      if (!config || !configId) return;
-      markCustomGameActive(configId);
-      setGameConfig(JSON.stringify(config));
-      setSelectedGameMode(4);
-      writeDeepLink({ game: configId });
-    });
-  });
-}
-initCustomGames();
 // Capture the incoming deep link before the launcher's taste recommendation
 // rewrites the address bar, so an explicit ?game= / ?mode= always wins.
 const initialDeepLink: DeepLink = readDeepLink();
@@ -170,13 +139,27 @@ function setGuideOnly(enabled: boolean): void {
   setCameraEvaluation(!enabled && cameraRunning);
 }
 
+let selectedPlayableMode: () => PlayableGameMode = () => 'mirror';
+
 async function unlockAudio(): Promise<boolean> {
-  if (musicStarted) return true;
+  const track = trackForProductFamily(productFamilyForMode(selectedPlayableMode()));
   try {
-    await musicEngine.start();
-    musicStarted = true;
+    if (!musicStarted) {
+      await musicEngine.start(track);
+      musicStarted = true;
+    } else {
+      musicEngine.selectTrack(track);
+    }
     audioButton.textContent = 'Music on';
-    trackStatus.textContent = 'Special Spotlight • 126 BPM';
+    trackStatus.textContent = track.statusLabel;
+    if (trackSourceLink) {
+      trackSourceLink.href = track.licenseUrl;
+      trackSourceLink.textContent = track.artist.includes('Studios') ? 'Studio original' : track.artist;
+    }
+    if (trackLicenseLink) {
+      trackLicenseLink.href = track.licenseUrl;
+      trackLicenseLink.textContent = track.licenseUrl.includes('zero') ? 'CC0 1.0' : 'License';
+    }
     return true;
   } catch (error) {
     trackStatus.textContent = 'Music unavailable • visual beat active';
@@ -213,6 +196,7 @@ const launcher = new LauncherController({
     setShellOwner('launcher');
   },
 });
+selectedPlayableMode = () => launcher.resolvedLaunchMode();
 
 ready = new ReadyController({
   readyGate,
@@ -232,7 +216,9 @@ ready = new ReadyController({
   visionLoader,
   tasteStore,
   availablePlayableModes,
+  readyModes: () => launcher.readyModes(),
   getSelectedModeKey: () => launcher.selectedModeKey,
+  isRandomLaunch: () => launcher.isRandomLaunch,
   resolvedLaunchMode: () => launcher.resolvedLaunchMode(),
   selectModeByKey: (key) => launcher.selectModeByKey(key),
   setShellOwner,
@@ -251,9 +237,9 @@ function applyDeepLink(link: DeepLink): void {
     try { all = JSON.parse(localStorage.getItem(CUSTOM_GAMES_KEY) ?? '[]'); } catch { /* empty */ }
     const config = all.find((c) => c.id === link.game);
     if (config) {
-      markCustomGameActive(link.game);
       setGameConfig(JSON.stringify(config));
       setSelectedGameMode(4);
+      writeDeepLink({ game: link.game });
       return;
     }
   }

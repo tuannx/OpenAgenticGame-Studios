@@ -73,6 +73,7 @@ export class MotionNavigationController {
   private confirmationLatched = false;
   private leanArmed = true;
   private modeIndex = 0;
+  private duoInviteSuppressed = false;
   private readonly availableModes: readonly PlayableGameMode[];
 
   constructor(
@@ -102,6 +103,10 @@ export class MotionNavigationController {
     let direction: MotionNavigationState['direction'] = 'neutral';
     let selectionChanged = false;
 
+    if (tracked.length < 2) {
+      this.duoInviteSuppressed = false;
+    }
+
     if (primary) {
       const lean = bodyLean(primary, this.config.keypointConfidence);
       if (lean !== undefined && Math.abs(lean) <= this.config.neutralThreshold) {
@@ -113,7 +118,17 @@ export class MotionNavigationController {
         this.leanArmed = false;
         selectionChanged = true;
         this.resetConfirmation();
+        if (tracked.length >= 2 && this.selectedMode() !== 'duo') {
+          this.duoInviteSuppressed = true;
+        }
       }
+    }
+
+    const inviteApplied = this.applyDuoInvite(tracked.length);
+    if (inviteApplied) {
+      selectionChanged = true;
+      direction = 'neutral';
+      this.resetConfirmation();
     }
 
     const requiredPlayers = this.selectedMode() === 'duo' ? 2 : 1;
@@ -141,6 +156,16 @@ export class MotionNavigationController {
       requiredPlayers,
       trackedPlayers: tracked.length,
     };
+  }
+
+  private applyDuoInvite(trackedCount: number): boolean {
+    if (trackedCount < 2 || this.duoInviteSuppressed) return false;
+    if (!this.availableModes.includes('duo')) return false;
+    if (this.selectedMode() === 'duo') return false;
+    const duoIndex = this.availableModes.indexOf('duo');
+    if (duoIndex < 0) return false;
+    this.modeIndex = duoIndex;
+    return true;
   }
 
   private resetGestureState(): void {

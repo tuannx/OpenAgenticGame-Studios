@@ -1,0 +1,21 @@
+{
+  "ritual_jump": "ritual_jump.wav",
+  "ritual_lava": "ritual_lava.wav",
+  "raise_hand": "raise_hand.wav",
+  "hold": "hold.wav",
+  "duo_invite": "duo_invite.wav",
+  "lets_go": "lets_go.wav",
+  "jump": "jump.wav",
+  "clap_replay": "clap_replay.wav",
+  "count_3": "count_3.wav",
+  "count_2": "count_2.wav",
+  "count_1": "count_1.wav",
+  "go": "go.wav",
+  "dance": "dance.wav",
+  "lava": "lava.wav",
+  "freeze": "freeze.wav",
+  "perfect": "perfect.wav",
+  "drop": "drop.wav",
+  "celebrate": "celebrate.wav",
+  "nice_try": "nice_try.wav"
+}

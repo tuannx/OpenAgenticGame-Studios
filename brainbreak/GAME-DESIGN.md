@@ -23,13 +23,13 @@ The framing coach adapts to your distance automatically. Just get your full body
 ## Player Journey (5 Steps, 15 Seconds to Play)
 
 ```
-OPEN LINK → PICK MODE → TAP CAMERA → STEP BACK + RAISE HAND → PLAY
+OPEN LINK → PICK MODE → TAP CAMERA → FRAME · RAISE (hold 1s) → PLAY
 ```
 
 | Step | User Action | System Response |
 |------|-------------|-----------------|
-| 1 | Open URL | Launcher shows 4 big picture cards |
-| 2 | Pick mode (or Random) | Card highlights, setup illustration appears |
+| 1 | Open URL | Launcher shows 2 ritual cards (BrainBreak · AR) |
+| 2 | Pick ritual | Card highlights, setup illustration appears |
 | 3 | **One tap**: "TURN ON CAMERA" | Camera activates, vision model loads |
 | 4 | Step back 1.5–2.5m, raise a hand | Framing coach → hold-ring fills → countdown 2…1 |
 | 5 | Move! | Neon runner begins, music drops |
@@ -42,16 +42,26 @@ OPEN LINK → PICK MODE → TAP CAMERA → STEP BACK + RAISE HAND → PLAY
 
 ---
 
-## Game Modes
+## Two Product Rituals (Player-Facing)
 
-| Mode | Badge | Players | Tempo | Feel |
-|------|-------|---------|-------|------|
-| **Mirror Beat** | CLASSIC | 1 | 1.45s/beat | Groovy, follow-the-leader poses |
-| **Beat Strike** | SPEED | 1 | 1.0s/beat | Fast reactions, lane dashes |
-| **Duo Groove** | 2 PLAYERS | 2 (same camera) | 1.25s/beat | Co-op sync, Party Overdrive ×2 |
-| **Random Fun!** | RANDOM | 1–2 | Mixed | Surprise mode pick |
+| Ritual | Engine | In-ritual variants | Sensory arc | Feel |
+|--------|--------|--------------------|-------------|------|
+| **BrainBreak Game** | Neon Beat Runner | Mirror Beat · Beat Strike · Duo Groove | Rise → Peak → Release (90s) | Neon highway with **downbeat kick shake + edge wash**; lean for tempo; **2 bodies auto-invite Duo** |
+| **Supernova** (AR badge) | Supernova Drop | Single AR ritual (lean cues hidden) | Dance → **5→1** → **FLOOR IS LAVA / FREEZE** → repeat → Drop | Dance charges core; lava warning countdown; freeze stillness; squat / hands-down pulls Drop |
 
-Duo unlocks when camera detects 2 players in frame.
+Launcher shows **only these two cards**. Philosophy: **60–90s sensory ritual → Awe** (not points chase). Criteria: ĐƠN GIẢN · WOW · DỄ VIRAL · BUỘC PHẢI CHƠI CÙNG NHAU.
+
+Mirror / Strike / Duo are Ready-gate leans inside BrainBreak (not separate products). Duo confirms when both players raise a hand; a second body in frame auto-selects Duo (lean away still respected). Studio custom games stay off the shell (`/studio.html` + `?game=`). Legacy `?mode=mirror|strike|duo|supernova|random` still resolves.
+
+### Sensory roadmap (scored, deferred)
+
+| Scenario | Shell home | Status |
+|----------|------------|--------|
+| Supernova Drop | AR ritual | **Shipped** — zoom Drop juice this milestone |
+| Liquid Co-op | BrainBreak Duo evolution | Deferred — invite DNA absorbed into Duo auto-invite |
+| Neon Growth Garden | Share / afterglow layer | Deferred — not a third shell card |
+
+See `openspec/changes/two-game-studio-shell/sensory-ritual-zoom.md`.
 
 ---
 
@@ -78,16 +88,16 @@ First obstacle sequence teaches all verbs inline. No tutorial screen.
 ```
 
 - **Time-boxed**: exactly 90s active play (setup/pause don't consume budget)
-- **Positive ending**: "BREAK COMPLETE" (time up) or "NICE RUN!" (energy spent) — never punishment
+- **Positive ending**: "GLOW COMPLETE" (time up) or "AFTERGLOW!" (energy spent) — never punishment; soft share cue "SHARE THE GLOW"
 - **Instant replay**: clap on result screen → same 2…1 countdown → go
-- **Combo pitch**: +1 semitone per 5 combo (cap +4), backing track stays 126 BPM
+- **Combo pitch**: +1 semitone per 5 combo (cap +4), backing track stays 140 BPM
 - **3 lives**: outline+X pips (not color-only), collision resets combo pitch
 
 ### Result Screen (Replay Engine)
 
 ```
 ┌──────────────────────────────────────┐
-│         BREAK COMPLETE               │
+│         GLOW COMPLETE                │
 │         1240  •  BEST 1580           │
 │    NEW PERSONAL BEST / COMBO x12     │
 │                                      │
@@ -114,10 +124,12 @@ No app store. No download. No account. Just a URL + a camera.
 
 ### Local Co-op (Same Screen, Zero Setup)
 1. Friend walks into camera frame → system detects 2 players
-2. Duo Groove mode **auto-unlocks** (no menu diving)
+2. Duo Groove **auto-selects** (party invite — no menu diving); lean away still allowed
 3. Both raise hands → shared countdown → play together
 4. Synchronized actions = **Party Overdrive ×2 score**
 5. Result shows both scores side-by-side → instant rivalry/fun
+
+Supernova co-op: 2 evaluated dancers charge the core **1.75× faster** → bigger Drop sooner.
 
 ### Remote Multiplayer (WebRTC Room)
 1. Player 1: Settings → "Create room" → gets 6-char code
@@ -170,7 +182,7 @@ The game adapts locally after 2+ sessions — no account, no cloud:
 |-------|--------|
 | Themes | Cyber Trunk (default) · Pink Girl Kawaii · Purple Vaporwave |
 | Camera overlays | Glass PIP · Transparent Cutout · Cyber Hologram · Neon Skeleton |
-| Music | "Special Spotlight" — Kevin MacLeod, 126 BPM, CC BY 4.0 |
+| Music | Runner: "Neon Jump Party" (studio CC0). Supernova: "Lava Freeze Party" (studio CC0). Both 140 BPM rock-dance; guide coach anim ~0.42× wall clock. Danny Go = taste/format inspiration only. |
 | Audio-reactive | Neon sun, road grid, pylons, particles pulse to spectrum energy |
 | HUD | Score, lives (3 pips), combo (from ×2). Quiet persistent, loud transient |
 
@@ -182,7 +194,7 @@ The game adapts locally after 2+ sessions — no account, no cloud:
 ┌─────────────────────────────────────────────────┐
 │  Browser (React + Vite)                         │
 │  ├─ TensorFlow.js MoveNet (pose, local only)    │
-│  ├─ WebAudio (126 BPM sync + spectrum)          │
+│  ├─ WebAudio (140 BPM sync + spectrum)          │
 │  └─ WebRTC DataChannel (multiplayer actions)    │
 ├─────────────────────────────────────────────────┤
 │  WASM (Rust → macroquad)                        │

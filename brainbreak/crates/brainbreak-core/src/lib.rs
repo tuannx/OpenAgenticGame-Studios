@@ -22,7 +22,8 @@ pub use runner::{
 pub use runtime::{MotionInputFrame, MotionRuntime, PlayerMotionState};
 pub use supernova::{
     SUPERNOVA_COUNTDOWN_SECONDS, SUPERNOVA_DANCE_SECONDS, SUPERNOVA_DROP_SECONDS,
-    SUPERNOVA_FREEZE_SECONDS, SUPERNOVA_SESSION_SECONDS, SupernovaFeedback, SupernovaGame,
+    SUPERNOVA_FREEZE_SECONDS, SUPERNOVA_LAVA_WARNING_SECONDS, SUPERNOVA_SESSION_SECONDS,
+    SupernovaFeedback, SupernovaGame,
     SupernovaOutcome, SupernovaPhase, SupernovaPlayer,
 };
 
