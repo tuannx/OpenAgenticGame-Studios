@@ -401,7 +401,8 @@ impl SupernovaStage {
             let source_height = (hip.y - shoulder.y).abs().max(0.12) * 2.4;
             let body_height = stage.figure_scale * 2.35 + self.core_spring.value * 8.0;
             let scale = body_height / source_height;
-            let anchor = vec2(cx + offset_x, cy);
+            // Hip-match the guide figure on the shared mid-playfield stage.
+            let anchor = vec2(cx + offset_x, cy + stage.figure_scale * 0.16);
             let project = |key: usize| {
                 let point = pose.keypoints[key];
                 vec2(

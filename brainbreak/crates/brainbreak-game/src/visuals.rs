@@ -931,9 +931,10 @@ fn draw_pink_user_overlay(
             1 => bounds.w * 0.14,
             _ => 0.0,
         };
+        // Hip-match the guide figure (guide hips sit ~0.16·scale below torso center).
         let anchor = vec2(
             bounds.x + stage.figure_center.x + lane_spread,
-            bounds.y + stage.figure_center.y,
+            bounds.y + stage.figure_center.y + stage.figure_scale * 0.16,
         );
         let project = |index: usize| {
             let keypoint = pose.keypoints[index];
